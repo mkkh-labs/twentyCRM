@@ -19,6 +19,8 @@ import { NodeEnvironment } from 'src/engine/core-modules/twenty-config/interface
 
 import { ExceptionHandlerDriver } from 'src/engine/core-modules/exception-handler/interfaces';
 import { MeterDriver } from 'src/engine/core-modules/metrics/types/meter-driver.type';
+import { sanitizeSentryErrorEvent } from 'src/engine/core-modules/sentry/utils/sanitize-sentry-error-event.util';
+import { sanitizeSentrySpan } from 'src/engine/core-modules/sentry/utils/sanitize-sentry-span.util';
 import { parseArrayEnvVar } from 'src/utils/parse-array-env-var';
 
 const meterDrivers = parseArrayEnvVar(
@@ -79,21 +81,22 @@ if (process.env.EXCEPTION_HANDLER_DRIVER === ExceptionHandlerDriver.SENTRY) {
         },
       }),
       Sentry.vercelAIIntegration({
-        recordInputs: true,
-        recordOutputs: true,
+        recordInputs: false,
+        recordOutputs: false,
       }),
       nodeProfilingIntegration(),
     ],
     tracesSampleRate,
-    tracesSampler: ({ name, inheritOrSampleWith }) =>
-      name.startsWith('ai.') ? 1 : inheritOrSampleWith(tracesSampleRate),
+    tracesSampler: ({ inheritOrSampleWith }) =>
+      inheritOrSampleWith(tracesSampleRate),
     profilesSampleRate: parseSampleRate({
       value: process.env.SENTRY_PROFILES_SAMPLE_RATE,
       fallback: 0.01,
     }),
     maxValueLength: 8192,
-    sendDefaultPii: true,
+    sendDefaultPii: false,
     debug: process.env.NODE_ENV === NodeEnvironment.DEVELOPMENT,
+    beforeSend: (event) => sanitizeSentryErrorEvent(event),
     beforeSendSpan: (span) => {
       const twentyContext = Sentry.getIsolationScope().getScopeData().contexts
         ?.twenty as
@@ -103,19 +106,10 @@ if (process.env.EXCEPTION_HANDLER_DRIVER === ExceptionHandlerDriver.SENTRY) {
           }
         | undefined;
 
-      if (!twentyContext?.workspace_id) {
-        return span;
-      }
-
-      span.data = {
-        ...span.data,
-        'twenty.workspace.id': twentyContext.workspace_id,
-        ...(twentyContext.user_workspace_id && {
-          'twenty.user_workspace.id': twentyContext.user_workspace_id,
-        }),
-      };
-
-      return span;
+      return sanitizeSentrySpan(span, {
+        workspacePresent: Boolean(twentyContext?.workspace_id),
+        userWorkspacePresent: Boolean(twentyContext?.user_workspace_id),
+      });
     },
   });
 }
