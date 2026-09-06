@@ -1,15 +1,25 @@
 /* @license Enterprise */
 
 import { Logger, Scope } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+
+import { isNonEmptyString, isNumber } from '@sniptt/guards';
+import { createHash } from 'crypto';
+import { type Repository } from 'typeorm';
 
 import { BillingSubscriptionUpdateService } from 'src/engine/core-modules/billing/services/billing-subscription-update.service';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
+import { type MessageQueueJobRetryContext } from 'src/engine/core-modules/message-queue/interfaces/message-queue-job.interface';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
-import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
-import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
-export type UpdateSubscriptionQuantityJobData = { workspaceId: string };
+import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
+
+export type UpdateSubscriptionQuantityJobData = {
+  workspaceId: string;
+  operationId?: string;
+  workspaceMembersCount?: number;
+  idempotencyKey?: string;
+};
 
 @Processor({
   queueName: MessageQueue.billingQueue,
@@ -20,40 +30,87 @@ export class UpdateSubscriptionQuantityJob {
 
   constructor(
     private readonly billingSubscriptionUpdateService: BillingSubscriptionUpdateService,
-    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    @InjectRepository(UserWorkspaceEntity)
+    private readonly userWorkspaceRepository: Repository<UserWorkspaceEntity>,
   ) {}
 
   @Process(UpdateSubscriptionQuantityJob.name)
-  async handle(data: UpdateSubscriptionQuantityJobData): Promise<void> {
-    const authContext = buildSystemAuthContext(data.workspaceId);
+  async handle(
+    data: UpdateSubscriptionQuantityJobData,
+    jobContext: MessageQueueJobRetryContext<UpdateSubscriptionQuantityJobData>,
+  ): Promise<void> {
+    const jobIdentity = isNonEmptyString(jobContext.jobId)
+      ? jobContext.jobId
+      : data.operationId;
 
-    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const workspaceMemberRepository =
-        this.workspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-          'workspaceMember',
-          { shouldBypassPermissionChecks: true },
-        );
+    if (!isNonEmptyString(jobIdentity)) {
+      throw new Error('Billing quantity job identity is required');
+    }
 
-      const workspaceMembersCount = await workspaceMemberRepository.count();
+    let workspaceMembersCount = data.workspaceMembersCount;
+    let idempotencyKey = data.idempotencyKey;
 
-      if (!workspaceMembersCount || workspaceMembersCount <= 0) {
+    if (!isNumber(workspaceMembersCount) && !isNonEmptyString(idempotencyKey)) {
+      workspaceMembersCount = await this.userWorkspaceRepository.count({
+        where: { workspaceId: data.workspaceId },
+      });
+
+      if (workspaceMembersCount <= 0) {
         return;
       }
 
-      try {
-        await this.billingSubscriptionUpdateService.changeSeats(
-          data.workspaceId,
-          workspaceMembersCount,
-        );
+      idempotencyKey = this.buildIdempotencyKey({
+        workspaceId: data.workspaceId,
+        workspaceMembersCount,
+        jobIdentity,
+      });
 
-        this.logger.log(
-          `Updating workspace ${data.workspaceId} subscription quantity to ${workspaceMembersCount} members`,
-        );
-      } catch (e) {
-        this.logger.warn(
-          `Failed to update workspace ${data.workspaceId} subscription quantity to ${workspaceMembersCount} members. Error: ${e}`,
-        );
-      }
-    }, authContext);
+      await jobContext.updateData({
+        ...data,
+        workspaceMembersCount,
+        idempotencyKey,
+      });
+    }
+
+    if (
+      !isNumber(workspaceMembersCount) ||
+      !Number.isInteger(workspaceMembersCount) ||
+      workspaceMembersCount <= 0 ||
+      !isNonEmptyString(idempotencyKey) ||
+      idempotencyKey !==
+        this.buildIdempotencyKey({
+          workspaceId: data.workspaceId,
+          workspaceMembersCount,
+          jobIdentity,
+        })
+    ) {
+      throw new Error('Invalid billing quantity job snapshot');
+    }
+
+    await this.billingSubscriptionUpdateService.changeSeats(
+      data.workspaceId,
+      workspaceMembersCount,
+      { idempotencyKey },
+    );
+
+    this.logger.log(
+      `Updated workspace ${data.workspaceId} subscription quantity to ${workspaceMembersCount} members`,
+    );
+  }
+
+  private buildIdempotencyKey({
+    workspaceId,
+    workspaceMembersCount,
+    jobIdentity,
+  }: {
+    workspaceId: string;
+    workspaceMembersCount: number;
+    jobIdentity: string;
+  }): string {
+    return createHash('sha256')
+      .update(
+        `${UpdateSubscriptionQuantityJob.name}:${workspaceId}:${workspaceMembersCount}:${jobIdentity}`,
+      )
+      .digest('hex');
   }
 }

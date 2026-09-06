@@ -59,8 +59,13 @@ export class StripeSubscriptionService {
   async updateSubscription(
     stripeSubscriptionId: string,
     updateData: Stripe.SubscriptionUpdateParams,
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>,
   ): Promise<Stripe.Subscription> {
-    return this.stripe.subscriptions.update(stripeSubscriptionId, updateData);
+    return this.stripe.subscriptions.update(
+      stripeSubscriptionId,
+      updateData,
+      requestOptions,
+    );
   }
 
   getBillingThresholds(meterPriceFlatAmount: number) {

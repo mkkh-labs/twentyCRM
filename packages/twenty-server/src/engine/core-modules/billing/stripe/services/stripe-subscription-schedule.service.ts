@@ -91,13 +91,18 @@ export class StripeSubscriptionScheduleService {
   async updateSchedule(
     scheduleId: string,
     params: Stripe.SubscriptionScheduleUpdateParams,
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>,
   ) {
     if (!this.stripe) throw new Error('Billing is disabled');
 
-    return await this.stripe.subscriptionSchedules.update(scheduleId, {
-      ...params,
-      proration_behavior: 'none',
-    });
+    return await this.stripe.subscriptionSchedules.update(
+      scheduleId,
+      {
+        ...params,
+        proration_behavior: 'none',
+      },
+      requestOptions,
+    );
   }
 
   async createSubscriptionSchedule(stripeSubscriptionId: string) {
