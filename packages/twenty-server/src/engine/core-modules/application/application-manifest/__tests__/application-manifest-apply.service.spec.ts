@@ -73,6 +73,24 @@ describe('ApplicationManifestApplyService', () => {
       applicationUniversalIdentifier: 'test-app',
       trigger: 'manifest-sync',
     });
+    expect(
+      applicationSyncService.synchronizeFromManifest,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      applicationSyncService.synchronizeFromManifest,
+    ).toHaveBeenNthCalledWith(1, {
+      workspaceId: WORKSPACE_ID,
+      manifest,
+      applicationRegistrationId: undefined,
+      dryRun: true,
+    });
+    expect(
+      applicationSyncService.synchronizeFromManifest,
+    ).toHaveBeenNthCalledWith(2, {
+      workspaceId: WORKSPACE_ID,
+      manifest,
+      applicationRegistrationId: undefined,
+    });
   });
 
   it('skips SDK client generation on dev sync when the schema is unchanged', async () => {
