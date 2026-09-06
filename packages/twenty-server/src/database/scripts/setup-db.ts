@@ -2,9 +2,10 @@ import { rawDataSource } from 'src/database/typeorm/raw/raw.datasource';
 
 import { camelToSnakeCase, performQuery } from './setup-db-utils';
 
-rawDataSource
-  .initialize()
-  .then(async () => {
+const setupDatabase = async (): Promise<void> => {
+  try {
+    await rawDataSource.initialize();
+
     await performQuery(
       'CREATE SCHEMA IF NOT EXISTS "public"',
       'create schema "public"',
@@ -85,11 +86,18 @@ $$;`,
         true,
       );
     }
-  })
-  .catch((err) => {
+  } catch (err) {
     // oxlint-disable-next-line no-console
     console.error('Error during Data Source initialization:', err);
-  });
+    process.exitCode = 1;
+  } finally {
+    if (rawDataSource.isInitialized) {
+      await rawDataSource.destroy();
+    }
+  }
+};
+
+void setupDatabase();
 
 async function checkForeignDataWrapperExists(
   wrapperName: string,
