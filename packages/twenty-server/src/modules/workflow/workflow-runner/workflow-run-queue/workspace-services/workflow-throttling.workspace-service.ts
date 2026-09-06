@@ -6,8 +6,8 @@ import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/typ
 import { ThrottlerService } from 'src/engine/core-modules/throttler/throttler.service';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { WorkflowRunWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import { NOT_STARTED_RUNS_FIND_OPTIONS } from 'src/modules/workflow/workflow-runner/workflow-run-queue/constants/not-started-runs-find-options';
 
 @Injectable()
@@ -18,6 +18,7 @@ export class WorkflowThrottlingWorkspaceService {
     private readonly workspaceOrmManager: WorkspaceOrmManager,
     private readonly throttlerService: ThrottlerService,
     private readonly twentyConfigService: TwentyConfigService,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {}
 
   async getRemainingRunsToEnqueueCount(workspaceId: string) {
@@ -72,13 +73,14 @@ export class WorkflowThrottlingWorkspaceService {
   async recomputeWorkflowRunNotStartedCount(
     workspaceId: string,
   ): Promise<void> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     const currentlyNotStartedWorkflowRunCount =
       await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
         const workflowRunRepository = this.workspaceOrmManager.getRepository(
           WorkflowRunWorkspaceEntity,
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
         return workflowRunRepository.count({
@@ -99,12 +101,13 @@ export class WorkflowThrottlingWorkspaceService {
   async getNotStartedRunsCountFromDatabase(
     workspaceId: string,
   ): Promise<number> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowRunRepository = this.workspaceOrmManager.getRepository(
         WorkflowRunWorkspaceEntity,
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
       return workflowRunRepository.count({

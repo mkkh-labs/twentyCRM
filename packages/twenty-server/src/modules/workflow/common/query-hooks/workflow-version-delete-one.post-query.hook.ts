@@ -30,6 +30,7 @@ export class WorkflowVersionDeleteOnePostQueryHook implements WorkspacePostQuery
     await this.workflowVersionCoreSyncService.deleteCoreVersionsByWorkspaceVersionIds(
       workspace.id,
       payload.map((workflowVersion) => workflowVersion.id),
+      { authContext },
     );
   }
 }

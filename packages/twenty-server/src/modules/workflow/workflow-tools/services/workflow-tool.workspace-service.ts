@@ -8,7 +8,8 @@ import { AgentService } from 'src/engine/metadata-modules/ai/ai-agent/agent.serv
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { LogicFunctionFromSourceService } from 'src/engine/metadata-modules/logic-function/services/logic-function-from-source.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { WorkflowSchemaWorkspaceService } from 'src/modules/workflow/workflow-builder/workflow-schema/workflow-schema.workspace-service';
 import { WorkflowValidationWorkspaceService } from 'src/modules/workflow/workflow-builder/workflow-validation/workflow-validation.workspace-service';
@@ -81,10 +82,11 @@ export class WorkflowToolWorkspaceService {
 
   generateWorkflowTools(
     workspaceId: string,
-    rolePermissionConfig: RolePermissionConfig,
+    rolePermissionConfig: ScopedRolePermissionConfig,
+    authContext?: WorkspaceAuthContext,
   ): ToolSet {
-    const context = { workspaceId };
-    const contextWithPermissions = { workspaceId, rolePermissionConfig };
+    const context = { workspaceId, rolePermissionConfig, authContext };
+    const contextWithPermissions = context;
 
     const createCompleteWorkflow = createCreateCompleteWorkflowTool(
       this.deps,

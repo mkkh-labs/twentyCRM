@@ -7,12 +7,14 @@ import { LogicFunctionModule } from 'src/engine/metadata-modules/logic-function/
 import { WorkspaceEventEmitterModule } from 'src/engine/workspace-event-emitter/workspace-event-emitter.module';
 import { WorkflowStatusesUpdateJob } from 'src/modules/workflow/workflow-status/jobs/workflow-statuses-update.job';
 import { WorkflowVersionStatusListener } from 'src/modules/workflow/workflow-status/listeners/workflow-version-status.listener';
+import { WorkflowCommonModule } from 'src/modules/workflow/common/workflow-common.module';
 
 @Module({
   imports: [
     LogicFunctionModule,
     WorkspaceEventEmitterModule,
     TypeOrmModule.forFeature([ObjectMetadataEntity, LogicFunctionEntity]),
+    WorkflowCommonModule,
   ],
   providers: [WorkflowStatusesUpdateJob, WorkflowVersionStatusListener],
 })

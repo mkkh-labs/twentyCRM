@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
@@ -99,9 +101,11 @@ export class WorkflowCronTriggerCronJob {
         await this.messageQueueService.add<WorkflowTriggerJobData>(
           WorkflowTriggerJob.name,
           {
+            triggerType: 'cron',
             workspaceId: trigger.workspaceId,
             workflowId: trigger.workflowId,
             payload: {},
+            rootCorrelationId: randomUUID(),
           },
           { retryLimit: 3 },
         );
@@ -193,9 +197,11 @@ export class WorkflowCronTriggerCronJob {
           await this.messageQueueService.add<WorkflowTriggerJobData>(
             WorkflowTriggerJob.name,
             {
+              triggerType: 'cron',
               workspaceId,
               workflowId,
               payload: {},
+              rootCorrelationId: randomUUID(),
             },
             { retryLimit: 3 },
           );

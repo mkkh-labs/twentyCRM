@@ -38,6 +38,8 @@ export const createUpdateWorkflowVersionPositionsTool = (
         workflowVersionId: parameters.workflowVersionId,
         positions: parameters.positions,
         workspaceId: context.workspaceId,
+        authContext: context.authContext,
+        rolePermissionConfig: context.rolePermissionConfig,
       });
     } catch (error) {
       return {

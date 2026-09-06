@@ -6,11 +6,14 @@ import { StepStatus, type WorkflowRunStepInfo } from 'twenty-shared/workflow';
 import { v4 } from 'uuid';
 
 import { WithLock } from 'src/engine/core-modules/cache-lock/with-lock.decorator';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import { RecordPositionService } from 'src/engine/core-modules/record-position/services/record-position.service';
+import { TransactionalOutboxService } from 'src/engine/core-modules/transactional-outbox/services/transactional-outbox.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowRunStatus,
   type WorkflowRunState,
@@ -32,6 +35,7 @@ export class WorkflowRunWorkspaceService {
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
     private readonly recordPositionService: RecordPositionService,
     private readonly metricsService: MetricsService,
+    private readonly transactionalOutboxService: TransactionalOutboxService,
   ) {}
 
   async createWorkflowRun({
@@ -42,6 +46,8 @@ export class WorkflowRunWorkspaceService {
     triggerPayload,
     error,
     workspaceId,
+    authContext,
+    rolePermissionConfig,
   }: {
     workflowVersionId: string;
     createdBy: ActorMetadata;
@@ -53,28 +59,27 @@ export class WorkflowRunWorkspaceService {
     workflowRunId?: string;
     error?: string;
     workspaceId: string;
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const scopedAuthority = await this.resolveScopedAuthority(workspaceId, {
+      authContext,
+      rolePermissionConfig,
+    });
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const workflowRunRepository =
-        this.workspaceOrmManager.getRepository<WorkflowRunWorkspaceEntity>(
-          'workflowRun',
-          { shouldBypassPermissionChecks: true },
-        );
-
       const workflowVersion =
         await this.workflowCommonWorkspaceService.getWorkflowVersionOrFail({
           workspaceId,
           workflowVersionId,
+          authContext: scopedAuthority.authContext,
+          rolePermissionConfig: scopedAuthority.rolePermissionConfig,
         });
 
       const workflowRepository =
         this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
           'workflow',
-          {
-            shouldBypassPermissionChecks: true,
-          },
+          scopedAuthority.rolePermissionConfig,
         );
 
       const workflow = await workflowRepository.findOne({
@@ -105,37 +110,69 @@ export class WorkflowRunWorkspaceService {
         error,
       );
 
-      const lastWorkflowRun = await workflowRunRepository.findOne({
-        where: {
-          workflowId: workflow.id,
+      const newWorkflowRunId = workflowRunId ?? v4();
+
+      return this.workspaceOrmManager.runInWorkspaceTransaction(
+        async (transactionScope) => {
+          const transactionalWorkflowRunRepository =
+            transactionScope.getRepository<WorkflowRunWorkspaceEntity>(
+              'workflowRun',
+              scopedAuthority.rolePermissionConfig,
+            );
+
+          const lastWorkflowRun =
+            await transactionalWorkflowRunRepository.findOne({
+              where: {
+                workflowId: workflow.id,
+              },
+              order: { createdAt: 'DESC' },
+            });
+
+          const workflowRunCountMatch = lastWorkflowRun?.name?.match(/#(\d+)/);
+
+          const workflowRunCount = workflowRunCountMatch
+            ? parseInt(workflowRunCountMatch[1], 10)
+            : 0;
+
+          await transactionalWorkflowRunRepository.insert({
+            id: newWorkflowRunId,
+            name: `#${workflowRunCount + 1} - ${workflow.name}`,
+            workflowVersionId,
+            createdBy,
+            workflowId: workflow.id,
+            coreWorkflowId: workflow.coreWorkflowId,
+            coreWorkflowVersionId: workflowVersion.coreWorkflowVersionId,
+            status,
+            position,
+            state: initState,
+            enqueuedAt:
+              status === WorkflowRunStatus.ENQUEUED ? new Date() : null,
+          });
+
+          await this.transactionalOutboxService.insertWithinWorkspaceTransaction(
+            {
+              workspaceId,
+              transactionScope,
+              event: {
+                id: v4(),
+                eventType: 'workflow.run.created',
+                schemaVersion: 1,
+                aggregateType: 'workflowRun',
+                aggregateId: newWorkflowRunId,
+                payload: {
+                  workflowRunId: newWorkflowRunId,
+                  workflowVersionId,
+                  status,
+                },
+                rootCorrelationId: newWorkflowRunId,
+              },
+            },
+          );
+
+          return newWorkflowRunId;
         },
-        order: { createdAt: 'DESC' },
-      });
-
-      const workflowRunCountMatch = lastWorkflowRun?.name?.match(/#(\d+)/);
-
-      const workflowRunCount = workflowRunCountMatch
-        ? parseInt(workflowRunCountMatch[1], 10)
-        : 0;
-
-      const workflowRun = {
-        id: workflowRunId ?? v4(),
-        name: `#${workflowRunCount + 1} - ${workflow.name}`,
-        workflowVersionId,
-        createdBy,
-        workflowId: workflow.id,
-        coreWorkflowId: workflow.coreWorkflowId,
-        coreWorkflowVersionId: workflowVersion.coreWorkflowVersionId,
-        status,
-        position,
-        state: initState,
-        enqueuedAt: status === WorkflowRunStatus.ENQUEUED ? new Date() : null,
-      };
-
-      await workflowRunRepository.insert(workflowRun);
-
-      return workflowRun.id;
-    }, authContext);
+      );
+    }, scopedAuthority.authContext);
   }
 
   @WithLock('workflowRunId')
@@ -358,17 +395,25 @@ export class WorkflowRunWorkspaceService {
   async getWorkflowRun({
     workflowRunId,
     workspaceId,
+    authContext: suppliedAuthContext,
+    rolePermissionConfig: suppliedRolePermissionConfig,
   }: {
     workflowRunId: string;
     workspaceId: string;
+    authContext?: WorkspaceAuthContext;
+    rolePermissionConfig?: ScopedRolePermissionConfig;
   }): Promise<WorkflowRunWorkspaceEntity | null> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId, {
+        authContext: suppliedAuthContext,
+        rolePermissionConfig: suppliedRolePermissionConfig,
+      });
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowRunRepository =
         this.workspaceOrmManager.getRepository<WorkflowRunWorkspaceEntity>(
           'workflowRun',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       return await workflowRunRepository.findOne({
@@ -380,13 +425,19 @@ export class WorkflowRunWorkspaceService {
   async getWorkflowRunOrFail({
     workflowRunId,
     workspaceId,
+    authContext,
+    rolePermissionConfig,
   }: {
     workflowRunId: string;
     workspaceId: string;
+    authContext?: WorkspaceAuthContext;
+    rolePermissionConfig?: ScopedRolePermissionConfig;
   }): Promise<WorkflowRunWorkspaceEntity> {
     const workflowRun = await this.getWorkflowRun({
       workflowRunId,
       workspaceId,
+      authContext,
+      rolePermissionConfig,
     });
 
     if (!workflowRun) {
@@ -403,18 +454,26 @@ export class WorkflowRunWorkspaceService {
     workflowRunId,
     workspaceId,
     partialUpdate,
+    authContext: suppliedAuthContext,
+    rolePermissionConfig: suppliedRolePermissionConfig,
   }: {
     workflowRunId: string;
     workspaceId: string;
     partialUpdate: Partial<WorkflowRunWorkspaceEntity>;
+    authContext?: WorkspaceAuthContext;
+    rolePermissionConfig?: ScopedRolePermissionConfig;
   }) {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId, {
+        authContext: suppliedAuthContext,
+        rolePermissionConfig: suppliedRolePermissionConfig,
+      });
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowRunRepository =
         this.workspaceOrmManager.getRepository<WorkflowRunWorkspaceEntity>(
           'workflowRun',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const workflowRunToUpdate = await workflowRunRepository.findOneBy({
@@ -430,6 +489,37 @@ export class WorkflowRunWorkspaceService {
 
       await workflowRunRepository.update(workflowRunToUpdate.id, partialUpdate);
     }, authContext);
+  }
+
+  private async resolveScopedAuthority(
+    workspaceId: string,
+    authority?: {
+      authContext?: WorkspaceAuthContext;
+      rolePermissionConfig?: ScopedRolePermissionConfig;
+    },
+  ): Promise<{
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
+  }> {
+    const authContext = authority?.authContext ?? getWorkspaceAuthContext();
+    const rolePermissionConfig =
+      authority?.rolePermissionConfig ??
+      (await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      ));
+
+    if (
+      authContext.workspace.id !== workspaceId ||
+      rolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in rolePermissionConfig
+    ) {
+      throw new WorkflowRunException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
+    return { authContext, rolePermissionConfig };
   }
 
   private getInitState(

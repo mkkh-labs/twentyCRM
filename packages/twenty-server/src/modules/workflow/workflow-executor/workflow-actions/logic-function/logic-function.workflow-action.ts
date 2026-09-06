@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
 import { isDefined, resolveInput } from 'twenty-shared/utils';
+import { ToolCategory } from 'twenty-shared/ai';
+import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/interfaces/workflow-action.interface';
 
 import { LogicFunctionExecutorService } from 'src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service';
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
+import { WorkflowActionEffectService } from 'src/modules/workflow/workflow-executor/services/workflow-action-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { getUserFromAuthContext } from 'src/modules/workflow/workflow-executor/utils/get-user-from-auth-context.util';
 import { findFlatEntityByIdInFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps.util';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
@@ -25,6 +29,8 @@ export class LogicFunctionWorkflowAction implements WorkflowAction {
     private readonly logicFunctionExecutorService: LogicFunctionExecutorService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly flatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
+    private readonly permissionsService: PermissionsService,
+    private readonly workflowActionEffectService: WorkflowActionEffectService,
   ) {}
 
   async execute({
@@ -79,20 +85,57 @@ export class LogicFunctionWorkflowAction implements WorkflowAction {
       );
     }
 
-    const { authContext } =
+    const executionContext =
       await this.workflowExecutionContextService.getExecutionContext(runInfo);
-
-    const result = await this.logicFunctionExecutorService.execute({
-      logicFunctionId: workflowActionInput.logicFunctionId,
+    const roleAllowed = await this.permissionsService.hasToolPermission(
+      executionContext.rolePermissionConfig,
       workspaceId,
-      payload: workflowActionInput.logicFunctionInput,
-      ...getUserFromAuthContext(authContext),
+      PermissionFlagType.CODE_INTERPRETER_TOOL,
+    );
+
+    const toolOutput = await this.workflowActionEffectService.execute({
+      actionInput: {
+        logicFunctionId: workflowActionInput.logicFunctionId,
+        payload: workflowActionInput.logicFunctionInput,
+      },
+      category: ToolCategory.LOGIC_FUNCTION,
+      description: 'Execute a workflow logic function',
+      executionContext,
+      executionRef: {
+        kind: 'logic_function',
+        logicFunctionId: workflowActionInput.logicFunctionId,
+      },
+      name: `workflow_logic_function_${workflowActionInput.logicFunctionId}`,
+      providerClass: 'workflow-logic-function',
+      roleAllowed,
+      runInfo,
+      stepId: currentStepId,
+      execute: async () => {
+        const result = await this.logicFunctionExecutorService.execute({
+          logicFunctionId: workflowActionInput.logicFunctionId,
+          workspaceId,
+          payload: workflowActionInput.logicFunctionInput,
+          ...getUserFromAuthContext(executionContext.authContext),
+        });
+
+        return result.error
+          ? {
+              success: false,
+              message: 'Workflow logic function failed',
+              error: result.error.errorMessage,
+            }
+          : {
+              success: true,
+              message: 'Workflow logic function executed',
+              result: result.data || {},
+            };
+      },
     });
 
-    if (result.error) {
-      return { error: result.error.errorMessage };
+    if (!toolOutput.success) {
+      return { error: toolOutput.error || toolOutput.message };
     }
 
-    return { result: result.data || {} };
+    return { result: toolOutput.result || {} };
   }
 }

@@ -2,6 +2,8 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { FileEntity } from 'src/engine/core-modules/file/entities/file.entity';
+import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
+import { PolicyModule } from 'src/engine/core-modules/policy/policy.module';
 import { FilesFieldModule } from 'src/engine/core-modules/file/files-field/files-field.module';
 import { RecordCrudModule } from 'src/engine/core-modules/record-crud/record-crud.module';
 import { TOOL_PROVIDERS } from 'src/engine/core-modules/tool-provider/constants/tool-providers.token';
@@ -57,6 +59,8 @@ import { ToolRegistryService } from './services/tool-registry.service';
     ToolModule,
     RecordCrudModule,
     FilesFieldModule,
+    FeatureFlagModule,
+    PolicyModule,
     AiModelsModule,
     forwardRef(() => AiAgentExecutionModule),
     ObjectMetadataModule,

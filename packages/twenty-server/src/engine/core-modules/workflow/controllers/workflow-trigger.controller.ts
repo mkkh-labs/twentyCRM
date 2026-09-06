@@ -24,12 +24,12 @@ import {
   TwentyOrmException,
   TwentyOrmExceptionCode,
 } from 'src/engine/twenty-orm/exceptions/twenty-orm.exception';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowVersionStatus,
   type WorkflowVersionWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import {
   WorkflowTriggerException,
   WorkflowTriggerExceptionCode,
@@ -48,6 +48,7 @@ export class WorkflowTriggerController {
     private readonly workflowTriggerWorkspaceService: WorkflowTriggerWorkspaceService,
     @InjectRepository(WorkspaceEntity)
     protected readonly workspaceRepository: Repository<WorkspaceEntity>,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {}
 
   @Post('workflows/:workspaceId/:workflowId')
@@ -93,7 +94,8 @@ export class WorkflowTriggerController {
       );
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     try {
       const { workflow } =
@@ -101,7 +103,7 @@ export class WorkflowTriggerController {
           const workflowRepository =
             this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
               'workflow',
-              { shouldBypassPermissionChecks: true },
+              rolePermissionConfig,
             );
 
           const workflow = await workflowRepository.findOne({
@@ -128,7 +130,7 @@ export class WorkflowTriggerController {
           const workflowVersionRepository =
             this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
               'workflowVersion',
-              { shouldBypassPermissionChecks: true },
+              rolePermissionConfig,
             );
           const workflowVersion = await workflowVersionRepository.findOne({
             where: { id: workflow.lastPublishedVersionId },
@@ -169,6 +171,8 @@ export class WorkflowTriggerController {
             context: {},
           },
           workspaceId,
+          authContext,
+          rolePermissionConfig,
         });
 
       return {

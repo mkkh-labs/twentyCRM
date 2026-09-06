@@ -1,14 +1,19 @@
 import { Logger, Scope } from '@nestjs/common';
 
-import { isDefined } from 'twenty-shared/utils';
+import { isDefined, isValidUuid } from 'twenty-shared/utils';
 
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
+import { ApplicationService } from 'src/engine/core-modules/application/application.service';
+import { buildApplicationAuthContext } from 'src/engine/core-modules/auth/utils/build-application-auth-context.util';
+import { type ApplicationWorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { type MessageQueueJobContext } from 'src/engine/core-modules/message-queue/interfaces/message-queue-job.interface';
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { fromWorkspaceEntityToFlat } from 'src/engine/core-modules/workspace/utils/from-workspace-entity-to-flat.util';
 import { WorkflowRunStatus } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { CodeStepBuildService } from 'src/modules/workflow/workflow-builder/workflow-version-step/code-step/services/code-step-build.service';
@@ -27,6 +32,7 @@ export class RunWorkflowJob {
   private readonly logger = new Logger(RunWorkflowJob.name);
 
   constructor(
+    private readonly applicationService: ApplicationService,
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
     private readonly codeStepBuildService: CodeStepBuildService,
     private readonly workflowExecutorWorkspaceService: WorkflowExecutorWorkspaceService,
@@ -36,16 +42,55 @@ export class RunWorkflowJob {
   ) {}
 
   @Process(RUN_WORKFLOW_JOB_NAME)
-  async handle({
-    workflowRunId,
-    lastExecutedStepId,
-    stepIdsToRetry,
-    workspaceId,
-  }: RunWorkflowJobData): Promise<void> {
+  async handle(
+    {
+      workflowRunId,
+      lastExecutedStepId,
+      stepIdsToRetry,
+      workspaceId,
+      policySchemaVersion,
+      rootCorrelationId,
+      originPolicyDecisionId,
+      approvalId,
+    }: RunWorkflowJobData,
+    jobContext: MessageQueueJobContext,
+  ): Promise<void> {
+    if (
+      !isDefined(jobContext?.jobId) ||
+      jobContext.jobName !== RUN_WORKFLOW_JOB_NAME ||
+      policySchemaVersion !== 1 ||
+      !isValidUuid(rootCorrelationId)
+    ) {
+      throw new WorkflowRunException(
+        'Protected workflow job identity is missing or mismatched.',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
     this.logger.log(
       `Running workflow run ${workflowRunId} in workspace ${workspaceId}`,
     );
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { application, workspace } =
+      await this.applicationService.findTwentyStandardApplicationOrThrow(
+        workspaceId,
+      );
+    const roleId = await this.applicationService.findApplicationRoleId(
+      application.id,
+      workspaceId,
+    );
+    const authContext = buildApplicationAuthContext({
+      workspace: fromWorkspaceEntityToFlat(workspace),
+      application: { ...application, defaultRoleId: roleId },
+    });
+    const rolePermissionConfig: ScopedRolePermissionConfig = {
+      unionOf: [roleId],
+    };
+    const policyTransportContext = {
+      jobId: jobContext.jobId,
+      rootCorrelationId,
+      originPolicyDecisionId,
+      approvalId,
+    };
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       try {
@@ -54,17 +99,22 @@ export class RunWorkflowJob {
             workspaceId,
             workflowRunId,
             stepIdsToRetry,
+            ...policyTransportContext,
           });
         } else if (lastExecutedStepId) {
           await this.resumeWorkflowExecution({
             workspaceId,
             workflowRunId,
             lastExecutedStepId,
+            ...policyTransportContext,
           });
         } else {
           await this.startWorkflowExecution({
             workflowRunId,
             workspaceId,
+            authContext,
+            rolePermissionConfig,
+            ...policyTransportContext,
           });
         }
       } catch (error) {
@@ -84,9 +134,21 @@ export class RunWorkflowJob {
   private async startWorkflowExecution({
     workflowRunId,
     workspaceId,
+    authContext,
+    rolePermissionConfig,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
   }: {
     workflowRunId: string;
     workspaceId: string;
+    authContext: ApplicationWorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
+    jobId: string;
+    rootCorrelationId: string;
+    originPolicyDecisionId?: string;
+    approvalId?: string;
   }): Promise<void> {
     const workflowRun =
       await this.workflowRunWorkspaceService.getWorkflowRunOrFail({
@@ -105,6 +167,8 @@ export class RunWorkflowJob {
       await this.workflowCommonWorkspaceService.getWorkflowVersionOrFail({
         workspaceId,
         workflowVersionId: workflowRun.workflowVersionId,
+        authContext,
+        rolePermissionConfig,
       });
 
     if (!workflowVersion.trigger || !workflowVersion.steps) {
@@ -135,6 +199,10 @@ export class RunWorkflowJob {
       stepIds,
       workflowRunId,
       workspaceId,
+      jobId,
+      rootCorrelationId,
+      originPolicyDecisionId,
+      approvalId,
     });
   }
 
@@ -142,10 +210,18 @@ export class RunWorkflowJob {
     workflowRunId,
     stepIdsToRetry,
     workspaceId,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
   }: {
     workflowRunId: string;
     stepIdsToRetry: string[];
     workspaceId: string;
+    jobId: string;
+    rootCorrelationId: string;
+    originPolicyDecisionId?: string;
+    approvalId?: string;
   }): Promise<void> {
     const workflowRun =
       await this.workflowRunWorkspaceService.getWorkflowRunOrFail({
@@ -161,6 +237,10 @@ export class RunWorkflowJob {
       stepIds: stepIdsToRetry,
       workflowRunId,
       workspaceId,
+      jobId,
+      rootCorrelationId,
+      originPolicyDecisionId,
+      approvalId,
     });
   }
 
@@ -168,10 +248,18 @@ export class RunWorkflowJob {
     workflowRunId,
     lastExecutedStepId,
     workspaceId,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
   }: {
     workflowRunId: string;
     lastExecutedStepId: string;
     workspaceId: string;
+    jobId: string;
+    rootCorrelationId: string;
+    originPolicyDecisionId?: string;
+    approvalId?: string;
   }): Promise<void> {
     const workflowRun =
       await this.workflowRunWorkspaceService.getWorkflowRunOrFail({
@@ -230,6 +318,10 @@ export class RunWorkflowJob {
           workflowRunId,
           workspaceId,
           executedStepsCount: 0,
+          jobId,
+          rootCorrelationId,
+          originPolicyDecisionId,
+          approvalId,
         },
       );
     }
@@ -239,6 +331,10 @@ export class RunWorkflowJob {
         stepIds: nextStepIdsToExecute,
         workflowRunId,
         workspaceId,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
     }
   }

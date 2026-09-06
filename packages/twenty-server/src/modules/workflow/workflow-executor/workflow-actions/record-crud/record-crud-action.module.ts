@@ -14,6 +14,9 @@ import { PickRecordWorkflowAction } from 'src/modules/workflow/workflow-executor
 import { UpdateRecordWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/update-record.workflow-action';
 import { UpsertRecordWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/upsert-record.workflow-action';
 import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
+import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
+import { WorkflowRecordEffectService } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/workflow-record-effect.service';
 
 @Module({
   imports: [
@@ -24,6 +27,8 @@ import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow
     UserRoleModule,
     RoleModule,
     WorkflowCommonModule,
+    WorkflowReliabilityModule,
+    WorkspaceCacheModule,
   ],
   providers: [
     WorkflowExecutionContextService,
@@ -33,6 +38,7 @@ import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow
     DeleteRecordWorkflowAction,
     FindRecordsWorkflowAction,
     PickRecordWorkflowAction,
+    WorkflowRecordEffectService,
   ],
   exports: [
     CreateRecordWorkflowAction,

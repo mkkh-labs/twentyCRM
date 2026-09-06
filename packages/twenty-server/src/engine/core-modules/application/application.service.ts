@@ -76,6 +76,27 @@ export class ApplicationService {
       );
     }
 
+    const { flatRoleMaps } = await this.workspaceCacheService.getOrRecompute(
+      workspaceId,
+      ['flatRoleMaps'],
+    );
+    const roleUniversalIdentifier =
+      flatRoleMaps.universalIdentifierById[application.defaultRoleId];
+    const role = isDefined(roleUniversalIdentifier)
+      ? flatRoleMaps.byUniversalIdentifier[roleUniversalIdentifier]
+      : undefined;
+
+    if (
+      !isDefined(role) ||
+      role.workspaceId !== workspaceId ||
+      role.applicationId !== applicationId
+    ) {
+      throw new ApplicationException(
+        `Could not find application ${applicationId}`,
+        ApplicationExceptionCode.APPLICATION_NOT_FOUND,
+      );
+    }
+
     return application.defaultRoleId;
   }
 

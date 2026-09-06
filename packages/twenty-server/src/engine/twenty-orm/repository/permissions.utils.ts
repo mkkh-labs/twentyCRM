@@ -23,6 +23,8 @@ import { getColumnNameToFieldMetadataIdMap } from 'src/engine/twenty-orm/utils/g
 
 const WORKSPACE_MEMBER_OBJECT_UNIVERSAL_IDENTIFIER =
   STANDARD_OBJECTS.workspaceMember.universalIdentifier;
+const DASHBOARD_OBJECT_UNIVERSAL_IDENTIFIER =
+  STANDARD_OBJECTS.dashboard.universalIdentifier;
 
 export type OperationType =
   | 'select'
@@ -96,9 +98,16 @@ export const validateOperationIsPermittedOrThrow = ({
   const isWorkspaceMemberObject =
     objectMetadata.universalIdentifier ===
     WORKSPACE_MEMBER_OBJECT_UNIVERSAL_IDENTIFIER;
+  const isDashboardObject =
+    objectMetadata.universalIdentifier ===
+    DASHBOARD_OBJECT_UNIVERSAL_IDENTIFIER;
 
   // TODO: this should be improved, we may have more complex permission configuration for is system objects
-  if (objectMetadataIsSystem && !isWorkspaceMemberObject) {
+  if (
+    objectMetadataIsSystem &&
+    !isWorkspaceMemberObject &&
+    !isDashboardObject
+  ) {
     return;
   }
 

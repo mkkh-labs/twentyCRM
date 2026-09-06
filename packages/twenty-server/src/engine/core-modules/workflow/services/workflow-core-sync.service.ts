@@ -14,6 +14,8 @@ import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace
 import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+import { getWorkspaceSchemaName } from 'src/engine/workspace-datasource/utils/get-workspace-schema-name.util';
+import { escapeIdentifier } from 'src/engine/workspace-manager/workspace-migration/utils/remove-sql-injection.util';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
 
 @Injectable()
@@ -133,22 +135,29 @@ export class WorkflowCoreSyncService {
       return;
     }
 
-    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const workspaceWorkflowRepository =
-        this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
-          'workflow',
-          { shouldBypassPermissionChecks: true },
-        );
+    await this.workspaceOrmManager.executeInWorkspaceContext(
+      () =>
+        this.workspaceOrmManager.runInWorkspaceTransaction(
+          async (transactionScope) => {
+            const workspaceSchemaName = escapeIdentifier(
+              getWorkspaceSchemaName(workspaceId),
+            );
 
-      for (const [
-        workspaceRecordId,
-        coreWorkflowId,
-      ] of coreWorkflowIdByWorkspaceRecordId) {
-        await workspaceWorkflowRepository.update(workspaceRecordId, {
-          coreWorkflowId,
-        });
-      }
-    }, buildSystemAuthContext(workspaceId));
+            for (const [
+              workspaceRecordId,
+              coreWorkflowId,
+            ] of coreWorkflowIdByWorkspaceRecordId) {
+              await transactionScope.executeRawQuery(
+                `UPDATE ${workspaceSchemaName}."workflow"
+                 SET "coreWorkflowId" = $1
+                 WHERE "id" = $2`,
+                [coreWorkflowId, workspaceRecordId],
+              );
+            }
+          },
+        ),
+      buildSystemAuthContext(workspaceId),
+    );
   }
 
   private async workspaceHasCoreWorkflowIdField(

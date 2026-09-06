@@ -1,12 +1,28 @@
 import { Module } from '@nestjs/common';
 
 import { ToolModule } from 'src/engine/core-modules/tool/tool.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
 import { HttpRequestWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/http-request/http-request.workflow-action';
 import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.module';
+import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
+import { UserWorkspaceModule } from 'src/engine/core-modules/user-workspace/user-workspace.module';
+import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
+import { RoleModule } from 'src/engine/metadata-modules/role/role.module';
+import { UserRoleModule } from 'src/engine/metadata-modules/user-role/user-role.module';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 
 @Module({
-  imports: [ToolModule, WorkflowRunModule],
-  providers: [HttpRequestWorkflowAction],
+  imports: [
+    ToolModule,
+    WorkflowRunModule,
+    WorkflowReliabilityModule,
+    ApplicationModule,
+    UserWorkspaceModule,
+    UserRoleModule,
+    RoleModule,
+    PermissionsModule,
+  ],
+  providers: [WorkflowExecutionContextService, HttpRequestWorkflowAction],
   exports: [HttpRequestWorkflowAction],
 })
 export class HttpRequestActionModule {}

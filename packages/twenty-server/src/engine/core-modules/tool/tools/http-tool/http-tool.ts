@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { type AxiosRequestConfig, isAxiosError } from 'axios';
 import { isDefined } from 'twenty-shared/utils';
@@ -17,6 +18,7 @@ export class HttpTool implements Tool {
   description =
     'Make an HTTP request to any URL with configurable method, headers, and body.';
   inputSchema = HttpRequestInputZodSchema;
+  flag = PermissionFlagType.HTTP_REQUEST_TOOL;
 
   constructor(
     private readonly secureHttpClientService: SecureHttpClientService,

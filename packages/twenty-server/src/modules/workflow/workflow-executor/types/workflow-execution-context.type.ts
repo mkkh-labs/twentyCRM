@@ -1,11 +1,12 @@
 import { type ActorMetadata } from 'twenty-shared/types';
 
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 
 export type WorkflowExecutionContext = {
   isActingOnBehalfOfUser: boolean;
   initiator: ActorMetadata;
-  rolePermissionConfig: RolePermissionConfig;
+  roleId: string;
+  rolePermissionConfig: ScopedRolePermissionConfig;
   authContext: WorkspaceAuthContext;
 };

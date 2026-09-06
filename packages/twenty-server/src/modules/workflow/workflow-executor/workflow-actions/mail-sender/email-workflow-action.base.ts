@@ -8,10 +8,14 @@ import {
 import { IsNull, type Repository } from 'typeorm';
 
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
+import { type ToolExecutionContext } from 'src/engine/core-modules/tool/types/tool-execution-context.type';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { type UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { type ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
+import { type WorkflowRunInfo } from 'src/modules/workflow/workflow-executor/types/workflow-action-input';
 import {
   WorkflowStepExecutorException,
   WorkflowStepExecutorExceptionCode,
@@ -30,12 +34,23 @@ import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-membe
 export abstract class EmailWorkflowActionBase extends ToolBackedWorkflowAction<WorkflowSendEmailActionInput> {
   protected constructor(
     loggerName: string,
+    toolId: string,
     workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
+    workflowToolEffectService: WorkflowToolEffectService,
     private readonly workspaceOrmManager: WorkspaceOrmManager,
+    workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly connectedAccountRepository: Repository<ConnectedAccountEntity>,
     private readonly userWorkspaceRepository: Repository<UserWorkspaceEntity>,
+    permissionsService: PermissionsService,
   ) {
-    super(loggerName, workflowRunStepLogService);
+    super(
+      loggerName,
+      toolId,
+      workflowRunStepLogService,
+      workflowToolEffectService,
+      workflowExecutionContextService,
+      permissionsService,
+    );
   }
 
   protected abstract getMode(): EmailStepLogMode;
@@ -70,18 +85,35 @@ export abstract class EmailWorkflowActionBase extends ToolBackedWorkflowAction<W
 
   protected override async postprocessInput(
     resolvedInput: WorkflowSendEmailActionInput,
-    workspaceId: string,
+    runInfo: WorkflowRunInfo,
   ): Promise<WorkflowSendEmailActionInput> {
     if (!isDefined(resolvedInput.connectedAccountId)) {
       return resolvedInput;
     }
 
+    const executionContext =
+      await this.workflowExecutionContextService.getExecutionContext(runInfo);
     const connectedAccountId = await this.resolveSenderConnectedAccountId(
       resolvedInput.connectedAccountId,
-      workspaceId,
+      runInfo.workspaceId,
+      executionContext.rolePermissionConfig,
     );
 
     return { ...resolvedInput, connectedAccountId };
+  }
+
+  protected override async buildToolExecutionContext(
+    runInfo: WorkflowRunInfo,
+  ): Promise<ToolExecutionContext> {
+    const executionContext =
+      await this.workflowExecutionContextService.getExecutionContext(runInfo);
+
+    return executionContext.authContext.type === 'user'
+      ? {
+          workspaceId: runInfo.workspaceId,
+          userWorkspaceId: executionContext.authContext.userWorkspaceId,
+        }
+      : { workspaceId: runInfo.workspaceId };
   }
 
   // The sender configured on an email step is either a connected account id
@@ -92,44 +124,49 @@ export abstract class EmailWorkflowActionBase extends ToolBackedWorkflowAction<W
   protected async resolveSenderConnectedAccountId(
     senderId: string,
     workspaceId: string,
+    rolePermissionConfig: Awaited<
+      ReturnType<WorkflowExecutionContextService['getExecutionContext']>
+    >['rolePermissionConfig'],
   ): Promise<string> {
     if (!isValidUuid(senderId)) {
       return senderId;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    const workspaceMember = await this.findWorkspaceMemberById(
+      senderId,
+      rolePermissionConfig,
+    );
 
-    return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const workspaceMember = await this.findWorkspaceMemberById(senderId);
+    if (!isDefined(workspaceMember)) {
+      return senderId;
+    }
 
-      if (!isDefined(workspaceMember)) {
-        return senderId;
-      }
+    const connectedAccountId =
+      await this.findFirstConnectedAccountIdByWorkspaceMember(
+        workspaceMember,
+        workspaceId,
+      );
 
-      const connectedAccountId =
-        await this.findFirstConnectedAccountIdByWorkspaceMember(
-          workspaceMember,
-          workspaceId,
-        );
+    if (!isDefined(connectedAccountId)) {
+      throw new WorkflowStepExecutorException(
+        `No connected account found for workspace member '${senderId}'`,
+        WorkflowStepExecutorExceptionCode.INVALID_STEP_INPUT,
+      );
+    }
 
-      if (!isDefined(connectedAccountId)) {
-        throw new WorkflowStepExecutorException(
-          `No connected account found for workspace member '${senderId}'`,
-          WorkflowStepExecutorExceptionCode.INVALID_STEP_INPUT,
-        );
-      }
-
-      return connectedAccountId;
-    }, authContext);
+    return connectedAccountId;
   }
 
   private async findWorkspaceMemberById(
     workspaceMemberId: string,
+    rolePermissionConfig: Awaited<
+      ReturnType<WorkflowExecutionContextService['getExecutionContext']>
+    >['rolePermissionConfig'],
   ): Promise<WorkspaceMemberWorkspaceEntity | null> {
     const workspaceMemberRepository =
       this.workspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
         'workspaceMember',
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
     return workspaceMemberRepository.findOne({

@@ -1,14 +1,18 @@
 import { Scope } from '@nestjs/common';
 
+import { isDefined, isValidUuid } from 'twenty-shared/utils';
 import { StepStatus } from 'twenty-shared/workflow';
 
+import { ApplicationService } from 'src/engine/core-modules/application/application.service';
+import { buildApplicationAuthContext } from 'src/engine/core-modules/auth/utils/build-application-auth-context.util';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
+import { type MessageQueueJobContext } from 'src/engine/core-modules/message-queue/interfaces/message-queue-job.interface';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { fromWorkspaceEntityToFlat } from 'src/engine/core-modules/workspace/utils/from-workspace-entity-to-flat.util';
 import { WorkflowRunStatus } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import { RESUME_DELAYED_WORKFLOW_JOB_NAME } from 'src/modules/workflow/workflow-executor/workflow-actions/delay/contants/resume-delayed-workflow-job-name';
 import { isWorkflowDelayAction } from 'src/modules/workflow/workflow-executor/workflow-actions/delay/guards/is-workflow-delay-action.guard';
@@ -28,6 +32,7 @@ import { WorkflowRunWorkspaceService } from 'src/modules/workflow/workflow-runne
 })
 export class ResumeDelayedWorkflowJob {
   constructor(
+    private readonly applicationService: ApplicationService,
     @InjectMessageQueue(MessageQueue.workflowQueue)
     private readonly messageQueueService: MessageQueueService,
     private readonly workflowRunWorkspaceService: WorkflowRunWorkspaceService,
@@ -35,12 +40,42 @@ export class ResumeDelayedWorkflowJob {
   ) {}
 
   @Process(RESUME_DELAYED_WORKFLOW_JOB_NAME)
-  async handle({
-    workspaceId,
-    workflowRunId,
-    stepId,
-  }: ResumeDelayedWorkflowJobData): Promise<void> {
-    const authContext = buildSystemAuthContext(workspaceId);
+  async handle(
+    {
+      workspaceId,
+      workflowRunId,
+      stepId,
+      policySchemaVersion,
+      rootCorrelationId,
+      originPolicyDecisionId,
+      approvalId,
+    }: ResumeDelayedWorkflowJobData,
+    jobContext: MessageQueueJobContext,
+  ): Promise<void> {
+    if (
+      !isDefined(jobContext?.jobId) ||
+      jobContext.jobName !== RESUME_DELAYED_WORKFLOW_JOB_NAME ||
+      policySchemaVersion !== 1 ||
+      !isValidUuid(rootCorrelationId)
+    ) {
+      throw new WorkflowRunException(
+        'Protected delayed workflow job identity is missing or mismatched.',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
+    const { application, workspace } =
+      await this.applicationService.findTwentyStandardApplicationOrThrow(
+        workspaceId,
+      );
+    const roleId = await this.applicationService.findApplicationRoleId(
+      application.id,
+      workspaceId,
+    );
+    const authContext = buildApplicationAuthContext({
+      workspace: fromWorkspaceEntityToFlat(workspace),
+      application: { ...application, defaultRoleId: roleId },
+    });
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       try {
@@ -91,6 +126,10 @@ export class ResumeDelayedWorkflowJob {
           {
             workspaceId,
             workflowRunId,
+            policySchemaVersion: 1,
+            rootCorrelationId,
+            originPolicyDecisionId,
+            approvalId,
             lastExecutedStepId: stepId,
           },
           buildRunWorkflowJobOptions(workflowRunId),

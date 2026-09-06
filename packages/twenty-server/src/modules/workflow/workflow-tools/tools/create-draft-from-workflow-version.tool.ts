@@ -31,6 +31,8 @@ export const createCreateDraftFromWorkflowVersionTool = (
         workspaceId: context.workspaceId,
         workflowId: parameters.workflowId,
         workflowVersionIdToCopy: parameters.workflowVersionIdToCopy,
+        authContext: context.authContext,
+        rolePermissionConfig: context.rolePermissionConfig,
       });
     } catch (error) {
       return {

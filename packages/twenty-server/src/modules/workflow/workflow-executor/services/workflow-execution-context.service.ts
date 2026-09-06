@@ -10,9 +10,7 @@ import { buildUserAuthContext } from 'src/engine/core-modules/auth/utils/build-u
 import { fromUserEntityToFlat } from 'src/engine/core-modules/user/utils/from-user-entity-to-flat.util';
 import { fromWorkspaceEntityToFlat } from 'src/engine/core-modules/workspace/utils/from-workspace-entity-to-flat.util';
 import { UserWorkspaceService } from 'src/engine/core-modules/user-workspace/user-workspace.service';
-import { RoleService } from 'src/engine/metadata-modules/role/role.service';
 import { UserRoleService } from 'src/engine/metadata-modules/user-role/user-role.service';
-import { STANDARD_ROLE } from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-role.constant';
 import { type WorkflowRunWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import { type WorkflowExecutionContext } from 'src/modules/workflow/workflow-executor/types/workflow-execution-context.type';
 import { WorkflowRunWorkspaceService as WorkflowRunService } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.workspace-service';
@@ -25,7 +23,6 @@ export class WorkflowExecutionContextService {
     private readonly userWorkspaceService: UserWorkspaceService,
     private readonly userRoleService: UserRoleService,
     private readonly applicationService: ApplicationService,
-    private readonly roleService: RoleService,
   ) {}
 
   async getExecutionContext(runInfo: {
@@ -84,6 +81,7 @@ export class WorkflowExecutionContextService {
     return {
       isActingOnBehalfOfUser: true,
       initiator: workflowRun.createdBy,
+      roleId,
       rolePermissionConfig: { unionOf: [roleId] },
       authContext,
     };
@@ -98,23 +96,10 @@ export class WorkflowExecutionContextService {
         workspaceId,
       );
 
-    // Use the application's role if set, otherwise fall back to admin role
-    // In the future we should probably assign the Admin role to the Standard Application
-    let roleId = application.defaultRoleId;
-
-    if (!isDefined(roleId)) {
-      // Fallback: Look up admin role for existing workspaces without defaultRoleId
-      const adminRole = await this.roleService.getRoleByUniversalIdentifier({
-        universalIdentifier: STANDARD_ROLE.admin.universalIdentifier,
-        workspaceId,
-      });
-
-      roleId = adminRole?.id ?? null;
-    }
-
-    const rolePermissionConfig = isDefined(roleId)
-      ? { unionOf: [roleId] }
-      : { shouldBypassPermissionChecks: true as const };
+    const roleId = await this.applicationService.findApplicationRoleId(
+      application.id,
+      workspaceId,
+    );
 
     const authContext: WorkspaceAuthContext = buildApplicationAuthContext({
       workspace: fromWorkspaceEntityToFlat(workspace),
@@ -127,7 +112,8 @@ export class WorkflowExecutionContextService {
     return {
       isActingOnBehalfOfUser: false,
       initiator: workflowRun.createdBy,
-      rolePermissionConfig,
+      roleId,
+      rolePermissionConfig: { unionOf: [roleId] },
       authContext,
     };
   }

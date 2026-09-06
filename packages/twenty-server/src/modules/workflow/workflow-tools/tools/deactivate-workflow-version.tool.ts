@@ -29,6 +29,10 @@ export const createDeactivateWorkflowVersionTool = (
       return await deps.workflowTriggerService.deactivateWorkflowVersion(
         parameters.workflowVersionId,
         context.workspaceId,
+        {
+          authContext: context.authContext,
+          rolePermissionConfig: context.rolePermissionConfig,
+        },
       );
     } catch (error) {
       return {

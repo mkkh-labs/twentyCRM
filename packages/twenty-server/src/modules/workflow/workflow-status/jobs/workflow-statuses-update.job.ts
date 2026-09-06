@@ -9,12 +9,13 @@ import { Processor } from 'src/engine/core-modules/message-queue/decorators/proc
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace-repository';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import {
   WorkflowVersionStatus,
   type WorkflowVersionWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 
 export enum WorkflowVersionEventType {
   CREATE = 'CREATE',
@@ -57,11 +58,17 @@ export type WorkflowVersionBatchDelete = {
 export class WorkflowStatusesUpdateJob {
   protected readonly logger = new Logger(WorkflowStatusesUpdateJob.name);
 
-  constructor(private readonly workspaceOrmManager: WorkspaceOrmManager) {}
+  constructor(
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
+  ) {}
 
   @Process(WorkflowStatusesUpdateJob.name)
   async handle(event: WorkflowVersionBatchEvent): Promise<void> {
-    const authContext = buildSystemAuthContext(event.workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(
+        event.workspaceId,
+      );
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       switch (event.type) {
@@ -71,6 +78,7 @@ export class WorkflowStatusesUpdateJob {
             event.workflowIds.map((workflowId) =>
               this.handleWorkflowVersionCreatedOrDeleted({
                 workflowId,
+                rolePermissionConfig,
               }),
             ),
           );
@@ -80,6 +88,7 @@ export class WorkflowStatusesUpdateJob {
             event.statusUpdates.map((statusUpdate) =>
               this.handleWorkflowVersionStatusUpdated({
                 statusUpdate,
+                rolePermissionConfig,
               }),
             ),
           );
@@ -92,19 +101,21 @@ export class WorkflowStatusesUpdateJob {
 
   private async handleWorkflowVersionCreatedOrDeleted({
     workflowId,
+    rolePermissionConfig,
   }: {
     workflowId: string;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }): Promise<void> {
     const workflowRepository =
       this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
         'workflow',
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
     const workflowVersionRepository =
       this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
         'workflowVersion',
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
     const newWorkflowStatuses = await this.getWorkflowStatuses({
@@ -135,19 +146,21 @@ export class WorkflowStatusesUpdateJob {
 
   private async handleWorkflowVersionStatusUpdated({
     statusUpdate,
+    rolePermissionConfig,
   }: {
     statusUpdate: WorkflowVersionStatusUpdate;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }): Promise<void> {
     const workflowRepository =
       this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
         'workflow',
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
     const workflowVersionRepository =
       this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
         'workflowVersion',
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
     const workflow = await workflowRepository.findOneOrFail({

@@ -4,7 +4,10 @@ import { type ObjectLiteral } from 'typeorm';
 
 import { type ObjectRecord } from 'twenty-shared/types';
 
-import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
+import {
+  getWorkspaceAuthContext,
+  withWorkspaceAuthContext,
+} from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { buildObjectIdByNameMaps } from 'src/engine/metadata-modules/flat-object-metadata/utils/build-object-id-by-name-maps.util';
 import { ExecuteInWorkspaceContextOptions } from 'src/engine/twenty-orm/types/execute-in-workspace-context-options.type';
@@ -14,6 +17,7 @@ import {
   withWorkspaceContext,
 } from 'src/engine/twenty-orm/storage/orm-workspace-context.storage';
 import type { RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
+import { resolveRolePermissionConfig } from 'src/engine/twenty-orm/utils/resolve-role-permission-config.util';
 import { WorkspaceDataSourceService } from 'src/engine/twenty-orm/datasource/workspace-data-source.service';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace-repository';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
@@ -72,6 +76,22 @@ export class WorkspaceOrmManager {
       .transaction(work);
   }
 
+  async resolveRolePermissionConfigForAuthContext(
+    authContext: WorkspaceAuthContext,
+  ): Promise<RolePermissionConfig | null> {
+    const { userWorkspaceRoleMap, apiKeyRoleMap } =
+      await this.workspaceCacheService.getOrRecompute(
+        authContext.workspace.id,
+        ['userWorkspaceRoleMap', 'apiKeyRoleMap'],
+      );
+
+    return resolveRolePermissionConfig({
+      authContext,
+      userWorkspaceRoleMap,
+      apiKeyRoleMap,
+    });
+  }
+
   async executeInWorkspaceContext<T>(
     fn: () => T | Promise<T>,
     authContext?: WorkspaceAuthContext,
@@ -82,7 +102,9 @@ export class WorkspaceOrmManager {
       ? await this.loadLiteWorkspaceContext(resolvedAuthContext)
       : await this.loadWorkspaceContext(resolvedAuthContext);
 
-    return withWorkspaceContext(context, fn);
+    return withWorkspaceAuthContext(resolvedAuthContext, () =>
+      withWorkspaceContext(context, fn),
+    );
   }
 
   private async loadWorkspaceContext(

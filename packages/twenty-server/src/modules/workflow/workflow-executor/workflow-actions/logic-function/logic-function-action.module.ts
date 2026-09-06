@@ -10,6 +10,9 @@ import { WorkflowCommonModule } from 'src/modules/workflow/common/workflow-commo
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import { LogicFunctionWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/logic-function/logic-function.workflow-action';
 import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.module';
+import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
+import { WorkflowActionEffectService } from 'src/modules/workflow/workflow-executor/services/workflow-action-effect.service';
 
 @Module({
   imports: [
@@ -21,8 +24,14 @@ import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow
     UserRoleModule,
     RoleModule,
     WorkflowCommonModule,
+    PermissionsModule,
+    WorkflowReliabilityModule,
   ],
-  providers: [WorkflowExecutionContextService, LogicFunctionWorkflowAction],
+  providers: [
+    WorkflowExecutionContextService,
+    WorkflowActionEffectService,
+    LogicFunctionWorkflowAction,
+  ],
   exports: [LogicFunctionWorkflowAction],
 })
 export class LogicFunctionActionModule {}

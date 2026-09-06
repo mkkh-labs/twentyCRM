@@ -35,6 +35,7 @@ import { type WorkflowActionOutput } from 'src/modules/workflow/workflow-executo
 import {
   type WorkflowBranchExecutorInput,
   type WorkflowExecutorInput,
+  type WorkflowPolicyTransportContext,
 } from 'src/modules/workflow/workflow-executor/types/workflow-executor-input';
 import { shouldExecuteStep } from 'src/modules/workflow/workflow-executor/utils/should-execute-step.util';
 import { shouldFailSafely } from 'src/modules/workflow/workflow-executor/utils/should-fail-safely.util';
@@ -73,6 +74,10 @@ export class WorkflowExecutorWorkspaceService {
     stepIds,
     workflowRunId,
     workspaceId,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
     shouldComputeWorkflowRunStatus = true,
     executedStepsCount = 0,
   }: WorkflowExecutorInput) {
@@ -83,6 +88,10 @@ export class WorkflowExecutorWorkspaceService {
           workflowRunId,
           workspaceId,
           executedStepsCount,
+          jobId,
+          rootCorrelationId,
+          originPolicyDecisionId,
+          approvalId,
         });
       }),
     );
@@ -100,6 +109,10 @@ export class WorkflowExecutorWorkspaceService {
     workflowRunId,
     workspaceId,
     executedStepsCount,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
   }: WorkflowBranchExecutorInput): Promise<void> {
     const workflowRun =
       await this.workflowRunWorkspaceService.getWorkflowRunOrFail({
@@ -141,6 +154,10 @@ export class WorkflowExecutorWorkspaceService {
         stepInfos,
         workflowRunId,
         workspaceId,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
 
       if (isDefined(actionOutput.error)) {
@@ -207,6 +224,9 @@ export class WorkflowExecutorWorkspaceService {
         lastExecutedStepId: stepId,
         workflowRunId,
         workspaceId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
 
       return;
@@ -226,6 +246,10 @@ export class WorkflowExecutorWorkspaceService {
         workflowRunId,
         workspaceId,
         executedStepsCount: (executedStepsCount ?? 0) + 1,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
     }
 
@@ -236,6 +260,10 @@ export class WorkflowExecutorWorkspaceService {
         workspaceId,
         shouldComputeWorkflowRunStatus: false,
         executedStepsCount: (executedStepsCount ?? 0) + 1,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
     }
   }
@@ -432,12 +460,20 @@ export class WorkflowExecutorWorkspaceService {
     stepInfos,
     workflowRunId,
     workspaceId,
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
   }: {
     step: WorkflowAction;
     steps: WorkflowAction[];
     stepInfos: WorkflowRunStepInfos;
     workflowRunId: string;
     workspaceId: string;
+    jobId: string;
+    rootCorrelationId: string;
+    originPolicyDecisionId?: string;
+    approvalId?: string;
   }) {
     // Credit-cap enforcement lives at the AI entry points (chat resolver,
     // executeAgent, generate-text controller, title generation). Cheap
@@ -458,13 +494,19 @@ export class WorkflowExecutorWorkspaceService {
     });
 
     try {
+      const workflowRunContext = getWorkflowRunContext(stepInfos);
+
       return await workflowAction.execute({
         currentStepId: stepId,
         steps,
-        context: getWorkflowRunContext(stepInfos),
+        context: workflowRunContext,
         runInfo: {
           workflowRunId,
           workspaceId,
+          jobId,
+          rootCorrelationId,
+          originPolicyDecisionId,
+          approvalId,
         },
       });
     } catch (error) {
@@ -499,7 +541,11 @@ export class WorkflowExecutorWorkspaceService {
     workflowRunId,
     workspaceId,
     executedStepsCount,
-  }: {
+    jobId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
+  }: WorkflowPolicyTransportContext & {
     stepIdsToSkip: string[];
     stepIdsToFailSafely: string[];
     steps: WorkflowAction[];
@@ -580,6 +626,10 @@ export class WorkflowExecutorWorkspaceService {
         workflowRunId,
         workspaceId,
         executedStepsCount,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
     }
 
@@ -590,6 +640,10 @@ export class WorkflowExecutorWorkspaceService {
         workspaceId,
         shouldComputeWorkflowRunStatus: false,
         executedStepsCount,
+        jobId,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
       });
     }
   }
@@ -598,7 +652,10 @@ export class WorkflowExecutorWorkspaceService {
     lastExecutedStepId,
     workflowRunId,
     workspaceId,
-  }: {
+    rootCorrelationId,
+    originPolicyDecisionId,
+    approvalId,
+  }: Omit<WorkflowPolicyTransportContext, 'jobId'> & {
     lastExecutedStepId: string;
     workflowRunId: string;
     workspaceId: string;
@@ -608,6 +665,10 @@ export class WorkflowExecutorWorkspaceService {
       {
         workspaceId,
         workflowRunId,
+        policySchemaVersion: 1,
+        rootCorrelationId,
+        originPolicyDecisionId,
+        approvalId,
         lastExecutedStepId,
       },
       buildRunWorkflowJobOptions(workflowRunId),

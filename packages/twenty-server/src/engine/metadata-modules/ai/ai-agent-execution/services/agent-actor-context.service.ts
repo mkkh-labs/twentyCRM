@@ -19,8 +19,7 @@ import {
   PermissionsExceptionCode,
 } from 'src/engine/metadata-modules/permissions/permissions.exception';
 import { UserRoleService } from 'src/engine/metadata-modules/user-role/user-role.service';
-import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 
 export type UserContext = {
   firstName: string;
@@ -39,47 +38,25 @@ export type AgentActorContext = {
 };
 
 @Injectable()
+// WorkspaceCacheService remains tenant-bound through the explicit workspaceId key.
 // oxlint-disable-next-line twenty/inject-workspace-repository
 export class AgentActorContextService {
   constructor(
     private readonly userWorkspaceService: UserWorkspaceService,
     private readonly userRoleService: UserRoleService,
-    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    private readonly workspaceCacheService: WorkspaceCacheService,
   ) {}
 
   async buildUserAndAgentActorContext(
     userWorkspaceId: string,
     workspaceId: string,
   ): Promise<AgentActorContext> {
-    const authContext = buildSystemAuthContext(workspaceId);
-
     const userWorkspace =
       await this.userWorkspaceService.findById(userWorkspaceId);
 
-    if (!userWorkspace) {
+    if (!userWorkspace || userWorkspace.workspaceId !== workspaceId) {
       throw new AiException(
-        'User workspace not found',
-        AiExceptionCode.AGENT_EXECUTION_FAILED,
-      );
-    }
-
-    const workspaceMember =
-      await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-        const workspaceMemberRepository =
-          this.workspaceOrmManager.getRepository('workspaceMember', {
-            shouldBypassPermissionChecks: true,
-          });
-
-        return workspaceMemberRepository.findOne({
-          where: {
-            userId: userWorkspace.userId,
-          },
-        });
-      }, authContext);
-
-    if (!workspaceMember) {
-      throw new AiException(
-        'Workspace member not found for user',
+        'User workspace not found in the requested workspace',
         AiExceptionCode.AGENT_EXECUTION_FAILED,
       );
     }
@@ -92,6 +69,26 @@ export class AgentActorContextService {
     if (!roleId) {
       throw new AiException(
         'User role not found',
+        AiExceptionCode.AGENT_EXECUTION_FAILED,
+      );
+    }
+
+    const { flatWorkspaceMemberMaps } =
+      await this.workspaceCacheService.getOrRecompute(workspaceId, [
+        'flatWorkspaceMemberMaps',
+      ]);
+    const workspaceMemberId =
+      flatWorkspaceMemberMaps.idByUserId[userWorkspace.userId];
+    const workspaceMember = isDefined(workspaceMemberId)
+      ? flatWorkspaceMemberMaps.byId[workspaceMemberId]
+      : undefined;
+
+    if (
+      !isDefined(workspaceMember) ||
+      workspaceMember.userId !== userWorkspace.userId
+    ) {
+      throw new AiException(
+        'Workspace member not found for user',
         AiExceptionCode.AGENT_EXECUTION_FAILED,
       );
     }
@@ -128,12 +125,19 @@ export class AgentActorContextService {
     workspaceId: string;
     viaApplication?: FlatApplication;
   }): Promise<RunAsWorkspaceMemberContext> {
-    const workspaceMember = await this.userWorkspaceService.getWorkspaceMember({
-      workspaceMemberId,
-      workspaceId,
-    });
+    const { flatWorkspaceMemberMaps } =
+      await this.workspaceCacheService.getOrRecompute(workspaceId, [
+        'flatWorkspaceMemberMaps',
+      ]);
+    const workspaceMember = flatWorkspaceMemberMaps.byId[workspaceMemberId];
 
-    if (!isDefined(workspaceMember)) {
+    if (
+      !isDefined(workspaceMember) ||
+      workspaceMember.id !== workspaceMemberId ||
+      isDefined(workspaceMember.deletedAt) ||
+      flatWorkspaceMemberMaps.idByUserId[workspaceMember.userId] !==
+        workspaceMemberId
+    ) {
       throw new AiException(
         `Workspace member ${workspaceMemberId} not found`,
         AiExceptionCode.RUN_AS_WORKSPACE_MEMBER_NOT_FOUND,
@@ -147,7 +151,11 @@ export class AgentActorContextService {
         relations: ['workspace', 'user'],
       });
 
-    if (!isDefined(userWorkspace)) {
+    if (
+      !isDefined(userWorkspace) ||
+      userWorkspace.workspaceId !== workspaceId ||
+      userWorkspace.userId !== workspaceMember.userId
+    ) {
       throw new AiException(
         `Workspace member ${workspaceMemberId} has no user workspace`,
         AiExceptionCode.RUN_AS_WORKSPACE_MEMBER_NOT_FOUND,

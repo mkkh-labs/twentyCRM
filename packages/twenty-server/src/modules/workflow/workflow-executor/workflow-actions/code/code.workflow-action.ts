@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { resolveInput } from 'twenty-shared/utils';
+import { ToolCategory } from 'twenty-shared/ai';
+import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/interfaces/workflow-action.interface';
 
 import { type LogicFunctionExecuteResult } from 'src/engine/core-modules/logic-function/logic-function-drivers/interfaces/logic-function-driver.interface';
 import { LogicFunctionExecutorService } from 'src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service';
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
+import { WorkflowActionEffectService } from 'src/modules/workflow/workflow-executor/services/workflow-action-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { getUserFromAuthContext } from 'src/modules/workflow/workflow-executor/utils/get-user-from-auth-context.util';
 import {
   WorkflowStepExecutorException,
@@ -28,6 +32,8 @@ export class CodeWorkflowAction implements WorkflowAction {
     private readonly logicFunctionExecutorService: LogicFunctionExecutorService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
+    private readonly permissionsService: PermissionsService,
+    private readonly workflowActionEffectService: WorkflowActionEffectService,
   ) {}
 
   async execute({
@@ -55,28 +61,69 @@ export class CodeWorkflowAction implements WorkflowAction {
 
     const { workspaceId } = runInfo;
 
-    const { authContext } =
+    const executionContext =
       await this.workflowExecutionContextService.getExecutionContext(runInfo);
-
-    const result = await this.logicFunctionExecutorService.execute({
-      logicFunctionId: workflowActionInput.logicFunctionId,
+    const roleAllowed = await this.permissionsService.hasToolPermission(
+      executionContext.rolePermissionConfig,
       workspaceId,
-      payload: workflowActionInput.logicFunctionInput,
-      ...getUserFromAuthContext(authContext),
+      PermissionFlagType.CODE_INTERPRETER_TOOL,
+    );
+
+    const toolOutput = await this.workflowActionEffectService.execute({
+      actionInput: {
+        logicFunctionId: workflowActionInput.logicFunctionId,
+        payload: workflowActionInput.logicFunctionInput,
+      },
+      category: ToolCategory.LOGIC_FUNCTION,
+      description: 'Execute workflow code',
+      executionContext,
+      executionRef: {
+        kind: 'logic_function',
+        logicFunctionId: workflowActionInput.logicFunctionId,
+      },
+      name: 'workflow_code',
+      providerClass: 'workflow-code',
+      roleAllowed,
+      runInfo,
+      stepId: currentStepId,
+      execute: async () => {
+        const result = await this.logicFunctionExecutorService.execute({
+          logicFunctionId: workflowActionInput.logicFunctionId,
+          workspaceId,
+          payload: workflowActionInput.logicFunctionInput,
+          ...getUserFromAuthContext(executionContext.authContext),
+        });
+
+        return result.error
+          ? {
+              success: false,
+              message: 'Workflow code execution failed',
+              error: result.error.errorMessage,
+            }
+          : {
+              success: true,
+              message: 'Workflow code executed',
+              result: result.data || {},
+            };
+      },
     });
 
     await this.persistStepLog({
       workflowRunId: runInfo.workflowRunId,
       workspaceId,
       stepId: currentStepId,
-      result,
+      result: toolOutput.success
+        ? ({ data: toolOutput.result } as LogicFunctionExecuteResult)
+        : ({
+            error: { errorMessage: toolOutput.error },
+          } as LogicFunctionExecuteResult),
     });
 
-    if (result.error) {
-      return { error: result.error.errorMessage };
+    if (!toolOutput.success) {
+      return { error: toolOutput.error || toolOutput.message };
     }
 
-    return { result: result.data || {} };
+    return { result: toolOutput.result || {} };
   }
 
   private async persistStepLog({

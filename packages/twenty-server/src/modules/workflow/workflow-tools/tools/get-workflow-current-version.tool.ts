@@ -1,21 +1,18 @@
 import { isDefined } from 'twenty-shared/utils';
 import { z } from 'zod';
 
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 import {
   WorkflowVersionStatus,
   type WorkflowVersionWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 
-type GetWorkflowCurrentVersionToolContext = WorkflowToolContext & {
-  rolePermissionConfig: RolePermissionConfig;
-};
+type GetWorkflowCurrentVersionToolContext = WorkflowToolAuthorizedContext;
 
 const getWorkflowCurrentVersionSchema = z.object({
   workflowId: z
@@ -38,7 +35,7 @@ export const createGetWorkflowCurrentVersionTool = (
   inputSchema: getWorkflowCurrentVersionSchema,
   execute: async (parameters: GetWorkflowCurrentVersionInput) => {
     try {
-      const authContext = buildSystemAuthContext(context.workspaceId);
+      const authContext = getWorkflowToolAuthContext(context);
 
       return await deps.workspaceOrmManager.executeInWorkspaceContext(
         async () => {

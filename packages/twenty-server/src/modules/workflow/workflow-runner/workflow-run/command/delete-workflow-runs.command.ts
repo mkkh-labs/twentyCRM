@@ -5,8 +5,8 @@ import { ProvisionedWorkspaceCommandRunner } from 'src/database/commands/command
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { type RunOnWorkspaceArgs } from 'src/database/commands/command-runners/workspace.command-runner';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { type WorkflowRunWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 
 @Command({
   name: 'workflow:delete-workflow-runs',
@@ -18,6 +18,7 @@ export class DeleteWorkflowRunsCommand extends ProvisionedWorkspaceCommandRunner
   constructor(
     private readonly workspaceOrmManager: WorkspaceOrmManager,
     protected readonly workspaceIteratorService: WorkspaceIteratorService,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {
     super(workspaceIteratorService);
   }
@@ -46,14 +47,15 @@ export class DeleteWorkflowRunsCommand extends ProvisionedWorkspaceCommandRunner
     workspaceId,
     options,
   }: RunOnWorkspaceArgs): Promise<void> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       try {
         const workflowRunRepository =
           this.workspaceOrmManager.getRepository<WorkflowRunWorkspaceEntity>(
             'workflowRun',
-            { shouldBypassPermissionChecks: true },
+            rolePermissionConfig,
           );
 
         const createdAtCondition = {

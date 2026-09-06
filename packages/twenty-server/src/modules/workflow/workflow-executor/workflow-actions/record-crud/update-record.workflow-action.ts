@@ -20,6 +20,8 @@ import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/fi
 import { resolveRichTextFieldsInRecord } from 'src/modules/workflow/workflow-executor/utils/resolve-rich-text-fields-in-record.util';
 import { isWorkflowUpdateRecordAction } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/guards/is-workflow-update-record-action.guard';
 import { type WorkflowUpdateRecordActionInput } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/types/workflow-record-crud-action-input.type';
+import { WorkflowRecordEffectService } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/workflow-record-effect.service';
+import { getWorkflowRecordFieldMetadataIds } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/utils/get-workflow-record-field-metadata-ids.util';
 
 @Injectable()
 export class UpdateRecordWorkflowAction implements WorkflowAction {
@@ -27,6 +29,7 @@ export class UpdateRecordWorkflowAction implements WorkflowAction {
     private readonly updateRecordService: UpdateRecordService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
+    private readonly workflowRecordEffectService: WorkflowRecordEffectService,
   ) {}
 
   async execute({
@@ -116,14 +119,35 @@ export class UpdateRecordWorkflowAction implements WorkflowAction {
 
     const updatedBy = buildWorkflowActorMetadata(executionContext);
 
-    const toolOutput = await this.updateRecordService.execute({
+    const toolOutput = await this.workflowRecordEffectService.execute({
+      operation: 'update_one',
       objectName: workflowActionInput.objectName,
-      objectRecordId: workflowActionInput.objectRecordId,
-      objectRecord: filteredObjectRecord,
-      fieldsToUpdate: filteredFieldsToUpdate,
-      authContext: executionContext.authContext,
-      updatedBy,
-      rolePermissionConfig: executionContext.rolePermissionConfig,
+      objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+      fieldMetadataIds: getWorkflowRecordFieldMetadataIds({
+        objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+        fieldNames: filteredFieldsToUpdate ?? Object.keys(filteredObjectRecord),
+        flatFieldMetadataMaps: objectMetadataInfo.flatFieldMetadataMaps,
+      }),
+      recordIds: [workflowActionInput.objectRecordId],
+      actionInput: {
+        objectName: workflowActionInput.objectName,
+        objectRecordId: workflowActionInput.objectRecordId,
+        objectRecord: filteredObjectRecord,
+        fieldsToUpdate: filteredFieldsToUpdate,
+      },
+      executionContext,
+      runInfo,
+      stepId: currentStepId,
+      execute: () =>
+        this.updateRecordService.execute({
+          objectName: workflowActionInput.objectName,
+          objectRecordId: workflowActionInput.objectRecordId,
+          objectRecord: filteredObjectRecord,
+          fieldsToUpdate: filteredFieldsToUpdate,
+          authContext: executionContext.authContext,
+          updatedBy,
+          rolePermissionConfig: executionContext.rolePermissionConfig,
+        }),
     });
 
     if (!toolOutput.success) {

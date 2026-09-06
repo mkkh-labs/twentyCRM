@@ -9,9 +9,10 @@ import {
   type WorkflowVersionWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 
 const agentResponseFormatSchema = z.union([
   z.object({ type: z.literal('text') }),
@@ -65,22 +66,28 @@ const resyncAiAgentStepOutputSchemas = async (
     | 'workspaceOrmManager'
     | 'flatEntityMapsCacheService'
   >,
-  { workspaceId, agentId }: { workspaceId: string; agentId: string },
+  context: WorkflowToolAuthorizedContext,
+  agentId: string,
 ): Promise<void> => {
+  const { workspaceId } = context;
+
   await deps.flatEntityMapsCacheService.invalidateFlatEntityMaps({
     workspaceId,
     flatMapsKeys: ['flatAgentMaps'],
   });
 
-  const workflowVersionRepository =
-    deps.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
-      'workflowVersion',
-      { shouldBypassPermissionChecks: true },
-    );
+  const draftVersions =
+    await deps.workspaceOrmManager.executeInWorkspaceContext(async () => {
+      const workflowVersionRepository =
+        deps.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
+          'workflowVersion',
+          context.rolePermissionConfig,
+        );
 
-  const draftVersions = await workflowVersionRepository.find({
-    where: { status: WorkflowVersionStatus.DRAFT },
-  });
+      return workflowVersionRepository.find({
+        where: { status: WorkflowVersionStatus.DRAFT },
+      });
+    }, getWorkflowToolAuthContext(context));
 
   for (const version of draftVersions) {
     const steps = version.steps;
@@ -115,7 +122,7 @@ export const createUpdateAgentTool = (
     | 'workspaceOrmManager'
     | 'flatEntityMapsCacheService'
   >,
-  context: WorkflowToolContext,
+  context: WorkflowToolAuthorizedContext,
 ) => ({
   name: 'update_agent' as const,
   description: `Update the AI agent used by a workflow AI_AGENT step.
@@ -150,7 +157,7 @@ To find the agentId, look at the AI_AGENT step's settings.input.agentId field.`,
 
       if (isDefined(responseFormat)) {
         try {
-          await resyncAiAgentStepOutputSchemas(deps, { workspaceId, agentId });
+          await resyncAiAgentStepOutputSchemas(deps, context, agentId);
         } catch (resyncError) {
           return {
             success: true,

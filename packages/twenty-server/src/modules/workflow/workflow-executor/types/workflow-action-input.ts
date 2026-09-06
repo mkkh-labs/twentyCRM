@@ -3,6 +3,10 @@ import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/work
 export type WorkflowRunInfo = {
   workflowRunId: string;
   workspaceId: string;
+  rootCorrelationId?: string;
+  jobId?: string;
+  originPolicyDecisionId?: string;
+  approvalId?: string;
 };
 
 export type WorkflowActionInput = {

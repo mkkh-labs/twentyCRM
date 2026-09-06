@@ -8,6 +8,7 @@ import { ThrottlerModule } from 'src/engine/core-modules/throttler/throttler.mod
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
 import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.module';
+import { WorkflowCommonModule } from 'src/modules/workflow/common/workflow-common.module';
 import { WorkflowHandleStaledRunsCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/command/workflow-handle-staled-runs.command';
 import { WorkflowCleanWorkflowRunsCronCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/cron/command/workflow-clean-workflow-runs.cron.command';
 import { WorkflowHandleStaledRunsCronCommand } from 'src/modules/workflow/workflow-runner/workflow-run-queue/cron/command/workflow-handle-staled-runs.cron.command';
@@ -31,6 +32,7 @@ import { WorkflowThrottlingWorkspaceService } from 'src/modules/workflow/workflo
     MetricsModule,
     ThrottlerModule,
     WorkflowRunModule,
+    WorkflowCommonModule,
   ],
   providers: [
     WorkflowThrottlingWorkspaceService,

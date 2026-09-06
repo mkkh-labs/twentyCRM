@@ -19,6 +19,8 @@ import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/fi
 import { resolveRichTextFieldsInRecord } from 'src/modules/workflow/workflow-executor/utils/resolve-rich-text-fields-in-record.util';
 import { isWorkflowUpsertRecordAction } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/guards/is-workflow-upsert-record-action.guard';
 import { type WorkflowUpsertRecordActionInput } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/types/workflow-record-crud-action-input.type';
+import { WorkflowRecordEffectService } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/workflow-record-effect.service';
+import { getWorkflowRecordFieldMetadataIds } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/utils/get-workflow-record-field-metadata-ids.util';
 
 @Injectable()
 export class UpsertRecordWorkflowAction implements WorkflowAction {
@@ -26,6 +28,7 @@ export class UpsertRecordWorkflowAction implements WorkflowAction {
     private readonly upsertRecordService: UpsertRecordService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
+    private readonly workflowRecordEffectService: WorkflowRecordEffectService,
   ) {}
 
   async execute({
@@ -92,11 +95,29 @@ export class UpsertRecordWorkflowAction implements WorkflowAction {
     const executionContext =
       await this.workflowExecutionContextService.getExecutionContext(runInfo);
 
-    const toolOutput = await this.upsertRecordService.execute({
+    const toolOutput = await this.workflowRecordEffectService.execute({
+      operation: 'upsert_many',
       objectName: workflowActionInput.objectName,
-      objectRecord: filteredObjectRecord,
-      authContext: executionContext.authContext,
-      rolePermissionConfig: executionContext.rolePermissionConfig,
+      objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+      fieldMetadataIds: getWorkflowRecordFieldMetadataIds({
+        objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+        fieldNames: Object.keys(filteredObjectRecord),
+        flatFieldMetadataMaps: objectMetadataInfo.flatFieldMetadataMaps,
+      }),
+      actionInput: {
+        objectName: workflowActionInput.objectName,
+        objectRecord: filteredObjectRecord,
+      },
+      executionContext,
+      runInfo,
+      stepId: currentStepId,
+      execute: () =>
+        this.upsertRecordService.execute({
+          objectName: workflowActionInput.objectName,
+          objectRecord: filteredObjectRecord,
+          authContext: executionContext.authContext,
+          rolePermissionConfig: executionContext.rolePermissionConfig,
+        }),
     });
 
     if (!toolOutput.success) {

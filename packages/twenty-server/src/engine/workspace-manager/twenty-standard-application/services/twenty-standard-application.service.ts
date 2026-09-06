@@ -11,6 +11,7 @@ import { keepWorkspaceOwnedProperties } from 'src/engine/metadata-modules/flat-e
 import { computeTwentyStandardApplicationAllFlatEntityMaps } from 'src/engine/workspace-manager/twenty-standard-application/utils/twenty-standard-application-all-flat-entity-maps.constant';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
 import { WorkspaceMigrationValidateBuildAndRunService } from 'src/engine/workspace-manager/workspace-migration/services/workspace-migration-validate-build-and-run-service';
+import { withDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
 import { FromToAllUniversalFlatEntityMaps } from 'src/engine/workspace-manager/workspace-migration/types/workspace-migration-orchestrator.type';
 
 // TODO completely deprecate this file once we've created the twenty-standard twenty-app manifest
@@ -76,22 +77,32 @@ export class TwentyStandardApplicationService {
       fromToAllFlatEntityMaps[flatEntityMapsKey] = fromTo;
     }
 
+    const operationId = `twenty-standard-application-sync:${twentyStandardFlatApplication.universalIdentifier}`;
     const validateAndBuildResult =
-      await this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromTo(
-        {
-          buildOptions: {
-            isSystemBuild: true,
-            inferDeletionFromMissingEntities: true,
-            applicationUniversalIdentifier:
-              twentyStandardFlatApplication.universalIdentifier,
-          },
-          fromToAllFlatEntityMaps,
-          workspaceId,
-          additionalCacheDataMaps: {
-            featureFlagsMap,
-          },
-          idByUniversalIdentifierByMetadataName,
-        },
+      await withDestructiveMetadataChangeExecutionContext(
+        { source: 'SYSTEM_BUILD', workspaceId, operationId },
+        () =>
+          this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromTo(
+            {
+              buildOptions: {
+                isSystemBuild: true,
+                inferDeletionFromMissingEntities: true,
+                applicationUniversalIdentifier:
+                  twentyStandardFlatApplication.universalIdentifier,
+              },
+              fromToAllFlatEntityMaps,
+              workspaceId,
+              additionalCacheDataMaps: {
+                featureFlagsMap,
+              },
+              idByUniversalIdentifierByMetadataName,
+              destructiveChangeAuthorization: {
+                source: 'SYSTEM_BUILD',
+                workspaceId,
+                operationId,
+              },
+            },
+          ),
       );
 
     if (validateAndBuildResult.status === 'fail') {
@@ -100,5 +111,6 @@ export class TwentyStandardApplicationService {
         'Multiple validation errors occurred while synchronizing twenty-standard application',
       );
     }
+
   }
 }

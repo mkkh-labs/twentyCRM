@@ -277,19 +277,19 @@ export class PermissionsService {
   }: {
     applicationId: string;
     workspaceId: string;
-  }): Promise<string | undefined> {
+  }): Promise<string> {
     const application = await this.applicationRepository.findOne({
       where: { id: applicationId, workspaceId },
     });
 
-    if (!isDefined(application)) {
+    if (!isDefined(application) || !isDefined(application.defaultRoleId)) {
       throw new ApplicationException(
         `Could not find application ${applicationId}`,
         ApplicationExceptionCode.APPLICATION_NOT_FOUND,
       );
     }
 
-    return application.defaultRoleId ?? undefined;
+    return application.defaultRoleId;
   }
 
   public checkRolePermissions(

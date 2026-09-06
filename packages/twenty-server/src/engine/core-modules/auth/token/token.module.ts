@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TypeORMModule } from 'src/database/typeorm/typeorm.module';
 import { AppTokenEntity } from 'src/engine/core-modules/app-token/app-token.entity';
 import { ApplicationEntity } from 'src/engine/core-modules/application/application.entity';
+import { ApplicationStopModule } from 'src/engine/core-modules/application/application-stop/application-stop.module';
 import { JwtAuthStrategy } from 'src/engine/core-modules/auth/strategies/jwt.auth.strategy';
 import { AccessTokenService } from 'src/engine/core-modules/auth/token/services/access-token.service';
 import { ApplicationTokenService } from 'src/engine/core-modules/auth/token/services/application-token.service';
@@ -38,6 +39,7 @@ import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache
     CoreEntityCacheModule,
     ImpersonationAuthorizationModule,
     UserSessionModule,
+    ApplicationStopModule,
   ],
   providers: [
     RenewTokenService,

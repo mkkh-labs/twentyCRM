@@ -112,10 +112,6 @@ export class EmailComposerService {
         );
       }
 
-      if (!isDefined(userWorkspaceId)) {
-        return allAccounts[0].id;
-      }
-
       const connectedAccountId = selectConnectedAccountIdForCaller({
         connectedAccounts: allAccounts,
         userWorkspaceId,
@@ -123,7 +119,7 @@ export class EmailComposerService {
 
       if (!isDefined(connectedAccountId)) {
         throw new EmailToolException(
-          `No connected account available for user workspace '${userWorkspaceId}'`,
+          'No connected account available for the current authority',
           EmailToolExceptionCode.CONNECTED_ACCOUNT_NOT_FOUND,
         );
       }
@@ -375,6 +371,18 @@ export class EmailComposerService {
       connectedAccountId,
       workspaceId,
     });
+
+    const usableConnectedAccountId = selectConnectedAccountIdForCaller({
+      connectedAccounts: [connectedAccount],
+      userWorkspaceId,
+    });
+
+    if (!isDefined(usableConnectedAccountId)) {
+      throw new EmailToolException(
+        'No connected account available for the current authority',
+        EmailToolExceptionCode.CONNECTED_ACCOUNT_NOT_FOUND,
+      );
+    }
 
     const messageChannel =
       connectedAccount.provider === ConnectedAccountProvider.EMAIL_GROUP

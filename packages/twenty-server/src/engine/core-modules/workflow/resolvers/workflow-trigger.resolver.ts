@@ -14,6 +14,7 @@ import { buildCreatedByFromFullNameMetadata } from 'src/engine/core-modules/acto
 import { PreventNestToAutoLogGraphqlErrorsFilter } from 'src/engine/core-modules/graphql/filters/prevent-nest-to-auto-log-graphql-errors.filter';
 import { ResolverValidationPipe } from 'src/engine/core-modules/graphql/pipes/resolver-validation.pipe';
 import { type AuthContextUser } from 'src/engine/core-modules/auth/types/auth-context.type';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
 import { RunWorkflowVersionInput } from 'src/engine/core-modules/workflow/dtos/run-workflow-version.input';
 import { RunWorkflowVersionDTO } from 'src/engine/core-modules/workflow/dtos/run-workflow-version.dto';
 import { WorkflowRunDTO } from 'src/engine/core-modules/workflow/dtos/workflow-run.dto';
@@ -26,9 +27,11 @@ import { UserAuthGuard } from 'src/engine/guards/user-auth.guard';
 import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 import { PermissionsGraphqlApiExceptionFilter } from 'src/engine/metadata-modules/permissions/utils/permissions-graphql-api-exception.filter';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { WorkflowTriggerWorkspaceService } from 'src/modules/workflow/workflow-trigger/workspace-services/workflow-trigger.workspace-service';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
+import {
+  WorkflowTriggerException,
+  WorkflowTriggerExceptionCode,
+} from 'src/modules/workflow/workflow-trigger/exceptions/workflow-trigger.exception';
 
 @CoreResolver()
 @UseGuards(
@@ -79,22 +82,26 @@ export class WorkflowTriggerResolver {
     @Args('input')
     { workflowVersionId, workflowRunId, payload }: RunWorkflowVersionInput,
   ) {
-    const authContext = buildSystemAuthContext(workspace.id);
+    const authContext = getWorkspaceAuthContext();
+    const rolePermissionConfig =
+      await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      );
 
-    const workspaceMember =
-      await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-        const workspaceMemberRepository =
-          this.workspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-            'workspaceMember',
-            { shouldBypassPermissionChecks: true },
-          );
+    if (
+      authContext.type !== 'user' ||
+      authContext.user.id !== user.id ||
+      authContext.workspace.id !== workspace.id ||
+      rolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in rolePermissionConfig
+    ) {
+      throw new WorkflowTriggerException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        WorkflowTriggerExceptionCode.FORBIDDEN,
+      );
+    }
 
-        return workspaceMemberRepository.findOneOrFail({
-          where: {
-            userId: user.id,
-          },
-        });
-      }, authContext);
+    const workspaceMember = authContext.workspaceMember;
 
     return this.workflowTriggerWorkspaceService.runWorkflowVersion({
       workflowVersionId,
@@ -115,6 +122,8 @@ export class WorkflowTriggerResolver {
         workspaceMemberId: workspaceMember.id,
       }),
       workspaceId: workspace.id,
+      authContext,
+      rolePermissionConfig,
     });
   }
 
