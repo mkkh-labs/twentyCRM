@@ -267,6 +267,7 @@ export class LogicFunctionExecutorService {
     if (
       await this.applicationStopService.isApplicationStopped(
         flatApplication.universalIdentifier,
+        flatApplication.workspaceId,
       )
     ) {
       throw new LogicFunctionException(

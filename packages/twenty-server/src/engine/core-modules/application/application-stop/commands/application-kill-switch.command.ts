@@ -24,7 +24,7 @@ type ApplicationKillSwitchCommandOptions = {
   name: 'application:kill-switch',
   arguments: '[action]',
   description:
-    'Toggle an application kill switch on every workspace: "stop" (default) halts its logic function executions until "remove" clears the switch.',
+    'Toggle an application kill switch on every workspace: "stop" (default) rejects its access tokens and logic functions until "remove" clears the switch.',
 })
 export class ApplicationKillSwitchCommand extends CommandRunner {
   protected logger: CommandLogger;

@@ -22,6 +22,7 @@ import {
   ApplicationExceptionCode,
 } from 'src/engine/core-modules/application/application.exception';
 import { ApplicationService } from 'src/engine/core-modules/application/application.service';
+import { ApplicationStopService } from 'src/engine/core-modules/application/application-stop/application-stop.service';
 import { type FlatApplication } from 'src/engine/core-modules/application/types/flat-application.type';
 import { FileStorageService } from 'src/engine/core-modules/file-storage/services/file-storage.service';
 import { LOGIC_FUNCTION_DRIVER_FACTORY_TOKEN } from 'src/engine/core-modules/logic-function/logic-function-drivers/constants/logic-function-driver-factory.token';
@@ -33,6 +34,7 @@ import { WorkspaceEventBroadcaster } from 'src/engine/subscriptions/workspace-ev
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
 import { WorkspaceMigrationValidateBuildAndRunService } from 'src/engine/workspace-manager/workspace-migration/services/workspace-migration-validate-build-and-run-service';
+import { withDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
 import { WorkspaceMigration } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration.type';
 import { streamToBuffer } from 'src/utils/stream-to-buffer';
 
@@ -53,6 +55,7 @@ export class ApplicationSyncService {
     @InjectRepository(FrontComponentEntity)
     private readonly frontComponentRepository: Repository<FrontComponentEntity>,
     private readonly workspaceEventBroadcaster: WorkspaceEventBroadcaster,
+    private readonly applicationStopService: ApplicationStopService,
   ) {}
 
   public async synchronizeFromManifest({
@@ -349,13 +352,6 @@ export class ApplicationSyncService {
       );
     }
 
-    if (shouldRunUninstallHook) {
-      await this.applicationUninstallService.runUninstallHookBestEffort({
-        application,
-        workspaceId,
-      });
-    }
-
     const flatEntityMapsCacheKeys = Object.values(ALL_METADATA_NAME).map(
       getMetadataFlatEntityMapsKey,
     );
@@ -379,18 +375,67 @@ export class ApplicationSyncService {
       toAllUniversalFlatEntityMaps: createEmptyAllFlatEntityMaps(),
     });
 
-    const validateAndBuildResult =
+    const dryRunResult =
       await this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromTo(
         {
           buildOptions: {
-            isSystemBuild: true,
+            isSystemBuild: false,
             inferDeletionFromMissingEntities: true,
             applicationUniversalIdentifier,
           },
-          fromToAllFlatEntityMaps,
+          fromToAllFlatEntityMaps: structuredClone(fromToAllFlatEntityMaps),
           workspaceId,
           additionalCacheDataMaps: { featureFlagsMap },
+          dryRun: true,
         },
+      );
+
+    if (dryRunResult.status === 'fail') {
+      throw new WorkspaceMigrationBuilderException(
+        dryRunResult,
+        'Validation errors occurred while uninstalling application',
+      );
+    }
+
+    if (shouldRunUninstallHook) {
+      await this.applicationUninstallService.runUninstallHookBestEffort({
+        application,
+        workspaceId,
+      });
+    }
+
+    await this.applicationStopService.stop(
+      applicationUniversalIdentifier,
+      workspaceId,
+    );
+
+    await this.cleanupApplicationRuntimeResources({
+      workspaceId,
+      applicationUniversalIdentifier,
+    });
+
+    const destructiveChangeAuthorization = {
+      source: 'APPLICATION_MANIFEST' as const,
+      workspaceId,
+      applicationUniversalIdentifier,
+    };
+    const validateAndBuildResult =
+      await withDestructiveMetadataChangeExecutionContext(
+        destructiveChangeAuthorization,
+        () =>
+          this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromTo(
+            {
+              buildOptions: {
+                isSystemBuild: false,
+                inferDeletionFromMissingEntities: true,
+                applicationUniversalIdentifier,
+              },
+              fromToAllFlatEntityMaps,
+              workspaceId,
+              additionalCacheDataMaps: { featureFlagsMap },
+              destructiveChangeAuthorization,
+            },
+          ),
       );
 
     if (validateAndBuildResult.status === 'fail') {
@@ -404,11 +449,6 @@ export class ApplicationSyncService {
       applicationUniversalIdentifier,
       workspaceId,
     );
-
-    await this.cleanupApplicationRuntimeResources({
-      workspaceId,
-      applicationUniversalIdentifier,
-    });
 
     return validateAndBuildResult.workspaceMigration;
   }
@@ -428,8 +468,13 @@ export class ApplicationSyncService {
         applicationUniversalIdentifier,
       });
     } catch (error) {
-      this.logger.warn(
+      this.logger.error(
         `Failed to clean up runtime resources for application ${applicationUniversalIdentifier} in workspace ${workspaceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      throw new ApplicationException(
+        'Application runtime cleanup failed; the application remains stopped and installed.',
+        ApplicationExceptionCode.UNINSTALL_ERROR,
       );
     }
   }

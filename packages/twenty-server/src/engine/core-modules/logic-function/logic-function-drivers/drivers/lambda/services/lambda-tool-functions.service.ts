@@ -34,6 +34,7 @@ import {
   type YarnInstallLambdaResult,
 } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/types/lambda-driver.type';
 import { buildYarnInstallFailureException } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/utils/build-yarn-install-failure-exception.util';
+import { buildLambdaVpcConfig } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/utils/build-lambda-vpc-config.util';
 import { computeHashedLambdaResourceName } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/utils/compute-hashed-lambda-resource-name.util';
 import { type LambdaAwsClientService } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/services/lambda-aws-client.service';
 import { copyBuilder } from 'src/engine/core-modules/logic-function/logic-function-drivers/utils/copy-builder';
@@ -55,7 +56,7 @@ export class LambdaToolFunctionsService {
   constructor(
     private readonly options: Pick<
       LambdaDriverOptions,
-      'lambdaRole' | 'resourceNamespace'
+      'lambdaRole' | 'resourceNamespace' | 'vpcConfig'
     >,
     private readonly awsClient: LambdaAwsClientService,
   ) {}
@@ -247,6 +248,7 @@ export class LambdaToolFunctionsService {
         Timeout: YARN_INSTALL_LAMBDA_TIMEOUT_SECONDS,
         MemorySize: YARN_INSTALL_LAMBDA_MEMORY_MB,
         EphemeralStorage: { Size: LAMBDA_EPHEMERAL_STORAGE_MB },
+        VpcConfig: buildLambdaVpcConfig(this.options.vpcConfig),
       };
 
       await lambdaClient.send(new CreateFunctionCommand(params));
@@ -296,6 +298,7 @@ export class LambdaToolFunctionsService {
         Timeout: BUILDER_LAMBDA_TIMEOUT_SECONDS,
         MemorySize: BUILDER_LAMBDA_MEMORY_MB,
         EphemeralStorage: { Size: LAMBDA_EPHEMERAL_STORAGE_MB },
+        VpcConfig: buildLambdaVpcConfig(this.options.vpcConfig),
       };
 
       await lambdaClient.send(new CreateFunctionCommand(params));

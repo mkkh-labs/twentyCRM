@@ -47,6 +47,11 @@ export interface LambdaDriverOptions extends LambdaClientConfig {
   layerBucket: string;
   layerBucketRegion: string;
   resourceNamespace: string;
+  reservedConcurrency: number;
+  vpcConfig?: {
+    subnetIds: string[];
+    securityGroupIds: string[];
+  };
 }
 
 export enum LambdaExecutionPhase {

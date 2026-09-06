@@ -6,7 +6,9 @@ import {
   type CreateFunctionCommandInput,
   DeleteFunctionCommand,
   GetFunctionCommand,
+  GetFunctionConcurrencyCommand,
   type GetFunctionCommandOutput,
+  PutFunctionConcurrencyCommand,
   ResourceNotFoundException,
   TagResourceCommand,
   UpdateFunctionCodeCommand,
@@ -33,6 +35,8 @@ import {
   PREBUILT_INSTALL_LOCK_TTL_MS,
 } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/constants/lambda-driver.constant';
 import { type LambdaDriverOptions } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/types/lambda-driver.type';
+import { buildLambdaVpcConfig } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/utils/build-lambda-vpc-config.util';
+import { isLambdaExecutorConfigurationCompliant } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/utils/is-lambda-executor-configuration-compliant.util';
 import { type LambdaAwsClientService } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/services/lambda-aws-client.service';
 import { type LambdaLayerManagerService } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/services/lambda-layer-manager.service';
 import { copyExecutor } from 'src/engine/core-modules/logic-function/logic-function-drivers/utils/copy-executor';
@@ -56,7 +60,10 @@ export class LambdaExecutorManagerService {
   private readonly logger = new Logger(LambdaExecutorManagerService.name);
 
   constructor(
-    private readonly options: Pick<LambdaDriverOptions, 'lambdaRole'>,
+    private readonly options: Pick<
+      LambdaDriverOptions,
+      'lambdaRole' | 'reservedConcurrency' | 'vpcConfig'
+    >,
     private readonly awsClient: LambdaAwsClientService,
     private readonly layerManager: LambdaLayerManagerService,
     private readonly cacheLockService: CacheLockService,
@@ -279,12 +286,20 @@ export class LambdaExecutorManagerService {
     const lambdaExecutor = await this.getLambdaExecutor(
       context.flatLogicFunction,
     );
-
-    const isActive = lambdaExecutor?.Configuration?.State === 'Active';
+    const actualReservedConcurrency = isDefined(lambdaExecutor)
+      ? await this.getReservedConcurrency(context.flatLogicFunction.id)
+      : undefined;
 
     const canSkip =
       isDefined(lambdaExecutor) &&
-      isActive &&
+      isLambdaExecutorConfigurationCompliant({
+        actualReservedConcurrency,
+        configuration: lambdaExecutor.Configuration,
+        expectedRole: this.options.lambdaRole,
+        expectedReservedConcurrency: this.options.reservedConcurrency,
+        expectedRuntime: context.flatLogicFunction.runtime,
+        expectedVpcConfig: this.options.vpcConfig,
+      }) &&
       !flatApplication.isSdkLayerStale &&
       this.layerManager.hasExpectedLayers({
         lambdaExecutor,
@@ -354,6 +369,7 @@ export class LambdaExecutorManagerService {
         sdkLayerArn,
       });
       await this.awsClient.waitFunctionActive(flatLogicFunction.id);
+      await this.enforceReservedConcurrency(flatLogicFunction.id);
 
       return;
     }
@@ -364,6 +380,31 @@ export class LambdaExecutorManagerService {
       sdkLayerArn,
     });
     await this.awsClient.waitFunctionUpdated(flatLogicFunction.id);
+    await this.enforceReservedConcurrency(flatLogicFunction.id);
+  }
+
+  private async getReservedConcurrency(
+    functionName: string,
+  ): Promise<number | undefined> {
+    const lambdaClient = await this.awsClient.getLambdaClient();
+    const result = await lambdaClient.send(
+      new GetFunctionConcurrencyCommand({ FunctionName: functionName }),
+    );
+
+    return result.ReservedConcurrentExecutions;
+  }
+
+  private async enforceReservedConcurrency(
+    functionName: string,
+  ): Promise<void> {
+    const lambdaClient = await this.awsClient.getLambdaClient();
+
+    await lambdaClient.send(
+      new PutFunctionConcurrencyCommand({
+        FunctionName: functionName,
+        ReservedConcurrentExecutions: this.options.reservedConcurrency,
+      }),
+    );
   }
 
   private async updateExecutorConfiguration({
@@ -382,8 +423,11 @@ export class LambdaExecutorManagerService {
         FunctionName: flatLogicFunction.id,
         Layers: [depsLayerArn, sdkLayerArn],
         Runtime: flatLogicFunction.runtime,
+        Role: this.options.lambdaRole,
         Timeout: EXECUTOR_LAMBDA_TIMEOUT_SECONDS,
         MemorySize: EXECUTOR_LAMBDA_MEMORY_MB,
+        EphemeralStorage: { Size: LAMBDA_EPHEMERAL_STORAGE_MB },
+        VpcConfig: buildLambdaVpcConfig(this.options.vpcConfig),
       }),
     );
   }
@@ -419,6 +463,7 @@ export class LambdaExecutorManagerService {
         Timeout: EXECUTOR_LAMBDA_TIMEOUT_SECONDS,
         MemorySize: EXECUTOR_LAMBDA_MEMORY_MB,
         EphemeralStorage: { Size: LAMBDA_EPHEMERAL_STORAGE_MB },
+        VpcConfig: buildLambdaVpcConfig(this.options.vpcConfig),
       };
 
       const lambdaClient = await this.awsClient.getLambdaClient();
