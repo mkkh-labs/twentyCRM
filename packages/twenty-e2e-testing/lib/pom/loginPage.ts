@@ -33,7 +33,6 @@ export class LoginPage {
   private readonly finishButton: Locator;
 
   constructor(public readonly page: Page) {
-    this.page = page;
     this.loginWithGoogleButton = page.getByRole('button', {
       name: 'Continue with Google',
     });
@@ -97,10 +96,13 @@ export class LoginPage {
   }
 
   async clickLoginWithEmailIfVisible() {
-    try {
-      await this.loginWithEmailButton.click({ timeout: 3000 });
-    } catch {
-      // Button not found - email field might already be visible (SSO-only or different auth flow)
+    await this.loginWithEmailButton
+      .or(this.emailField)
+      .first()
+      .waitFor({ state: 'visible', timeout: 30000 });
+
+    if (await this.loginWithEmailButton.isVisible()) {
+      await this.loginWithEmailButton.click();
     }
   }
 
@@ -165,7 +167,35 @@ export class LoginPage {
   }
 
   async clickSkipOnboardingStep() {
-    await this.skipOnboardingStepButton.click();
+    const previousPathname = new URL(this.page.url()).pathname;
+
+    await this.skipOnboardingStepButton.last().click();
+    await this.page.waitForURL(
+      (url) => url.pathname !== previousPathname,
+      { timeout: 30000 },
+    );
+  }
+
+  async skipOptionalOnboardingStepsUntilCreateProfile() {
+    const createProfileHeading = this.page.getByText('Create profile');
+    const optionalStepHeadings = this.page
+      .getByText('Import your contacts')
+      .or(this.page.getByText('Install your first apps'));
+
+    for (let skippedStepCount = 0; skippedStepCount < 2; skippedStepCount++) {
+      await optionalStepHeadings
+        .or(createProfileHeading)
+        .first()
+        .waitFor({ state: 'visible', timeout: 90000 });
+
+      if (await createProfileHeading.isVisible()) {
+        return;
+      }
+
+      await this.clickSkipOnboardingStep();
+    }
+
+    await createProfileHeading.waitFor({ state: 'visible', timeout: 30000 });
   }
 
   async typeFirstName(firstName: string) {

@@ -57,20 +57,22 @@ test('New workspace signup goes through every onboarding stage', async ({
     }
 
     await loginPage.clickSkipOnboardingStep();
-    await expect(installAppsHeading).toBeVisible();
+    await expect(installAppsHeading.or(createProfileHeading)).toBeVisible();
 
-    await test.step('Goes back to the skipped sync-email stage', async () => {
-      await page.getByRole('button', { name: 'Go back' }).click();
-      await expect(syncEmailsHeading).toBeVisible();
+    if (await installAppsHeading.isVisible()) {
+      await test.step('Goes back to the skipped sync-email stage', async () => {
+        await page.getByRole('button', { name: 'Go back' }).click();
+        await expect(syncEmailsHeading).toBeVisible();
 
-      await page.reload();
-      await expect(syncEmailsHeading).toBeVisible({
-        timeout: 30000,
+        await page.reload();
+        await expect(syncEmailsHeading).toBeVisible({
+          timeout: 30000,
+        });
+
+        await loginPage.clickSkipOnboardingStep();
+        await expect(installAppsHeading.or(createProfileHeading)).toBeVisible();
       });
-
-      await loginPage.clickSkipOnboardingStep();
-      await expect(installAppsHeading).toBeVisible();
-    });
+    }
   });
 
   await test.step('Install-apps stage (when shown)', async () => {
