@@ -1,8 +1,7 @@
-import prettier from '@prettier/sync';
 import * as fs from 'fs';
 import { globSync } from 'glob';
 import path from 'path';
-import { type Options } from 'prettier';
+import prettier, { type Options } from 'prettier';
 import slash from 'slash';
 import ts from 'typescript';
 
@@ -19,14 +18,18 @@ const NX_PROJECT_CONFIGURATION_PATH = path.join(
   NX_PROJECT_CONFIGURATION_FILENAME,
 );
 
-const prettierConfigFile = prettier.resolveConfigFile();
-if (prettierConfigFile == null) {
-  throw new Error('Prettier config file not found');
-}
-const prettierConfiguration = prettier.resolveConfig(prettierConfigFile);
-const prettierFormat = (str: string, parser: Options['parser']) =>
+const prettierConfigurationPromise = prettier
+  .resolveConfigFile()
+  .then((prettierConfigFile) => {
+    if (prettierConfigFile == null) {
+      throw new Error('Prettier config file not found');
+    }
+
+    return prettier.resolveConfig(prettierConfigFile);
+  });
+const prettierFormat = async (str: string, parser: Options['parser']) =>
   prettier.format(str, {
-    ...prettierConfiguration,
+    ...(await prettierConfigurationPromise),
     parser,
   });
 type createTypeScriptFileArgs = {
@@ -34,7 +37,7 @@ type createTypeScriptFileArgs = {
   content: string;
   filename: string;
 };
-const createTypeScriptFile = ({
+const createTypeScriptFile = async ({
   content,
   path: filePath,
   filename,
@@ -49,7 +52,7 @@ const createTypeScriptFile = ({
  *                              |___/
  */
 `;
-  const formattedContent = prettierFormat(
+  const formattedContent = await prettierFormat(
     `${header}\n${content}\n`,
     'typescript',
   );
@@ -149,20 +152,20 @@ type WriteInJsonFileArgs = {
   content: JsonUpdate;
   file: string;
 };
-const updateJsonFile = ({ content, file }: WriteInJsonFileArgs) => {
+const updateJsonFile = async ({ content, file }: WriteInJsonFileArgs) => {
   const updatedJsonFile = JSON.stringify(content);
-  const formattedContent = prettier.format(updatedJsonFile, {
-    ...prettierConfiguration,
+  const formattedContent = await prettier.format(updatedJsonFile, {
+    ...(await prettierConfigurationPromise),
     filepath: file,
   });
   fs.writeFileSync(file, formattedContent, 'utf-8');
 };
 
-const writeInPackageJson = (update: JsonUpdate) => {
+const writeInPackageJson = async (update: JsonUpdate) => {
   const rawJsonFile = fs.readFileSync(PACKAGE_JSON_PATH, 'utf-8');
   const initialJsonFile = JSON.parse(rawJsonFile);
 
-  updateJsonFile({
+  await updateJsonFile({
     file: PACKAGE_JSON_PATH,
     content: {
       ...initialJsonFile,
@@ -171,11 +174,13 @@ const writeInPackageJson = (update: JsonUpdate) => {
   });
 };
 
-const updateNxProjectConfigurationBuildOutputs = (outputs: JsonUpdate) => {
+const updateNxProjectConfigurationBuildOutputs = async (
+  outputs: JsonUpdate,
+) => {
   const rawJsonFile = fs.readFileSync(NX_PROJECT_CONFIGURATION_PATH, 'utf-8');
   const initialJsonFile = JSON.parse(rawJsonFile);
 
-  updateJsonFile({
+  await updateJsonFile({
     file: NX_PROJECT_CONFIGURATION_PATH,
     content: {
       ...initialJsonFile,
@@ -486,7 +491,7 @@ const retrieveExportsByBarrel = (barrelDirectories: string[]) => {
   });
 };
 
-const main = () => {
+const main = async () => {
   const moduleDirectories = getSubDirectoryPaths(SRC_PATH);
   const exportsByBarrel = retrieveExportsByBarrel(moduleDirectories);
   const moduleIndexFiles = generateModuleIndexFiles(exportsByBarrel);
@@ -495,8 +500,13 @@ const main = () => {
   const nxBuildOutputsPath =
     computeProjectNxBuildOutputsPath(moduleDirectories);
 
-  updateNxProjectConfigurationBuildOutputs(nxBuildOutputsPath);
-  writeInPackageJson(packageJsonConfig);
-  moduleIndexFiles.forEach(createTypeScriptFile);
+  await updateNxProjectConfigurationBuildOutputs(nxBuildOutputsPath);
+  await writeInPackageJson(packageJsonConfig);
+  for (const moduleIndexFile of moduleIndexFiles) {
+    await createTypeScriptFile(moduleIndexFile);
+  }
 };
-main();
+main().catch((error: unknown) => {
+  process.stderr.write(`${String(error)}\n`);
+  process.exitCode = 1;
+});
