@@ -1,12 +1,14 @@
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 
 import { useDeleteOneObjectMetadataItem } from '@/object-metadata/hooks/useDeleteOneObjectMetadataItem';
+import { type PreparedMetadataDeletion } from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { useGetIsMetadataItemCustom } from '@/object-metadata/hooks/useGetIsMetadataItemCustom';
 import { useUpdateOneObjectMetadataItem } from '@/object-metadata/hooks/useUpdateOneObjectMetadataItem';
 import { isDDLLockedState } from '@/client-config/states/isDDLLockedState';
 import { isObjectMetadataReadOnly } from '@/object-record/read-only/utils/isObjectMetadataReadOnly';
 import { AdvancedSettingsWrapper } from '@/settings/components/AdvancedSettingsWrapper';
 import { SettingsUpdateDataModelObjectAboutForm } from '@/settings/data-model/object-details/components/SettingsUpdateDataModelObjectAboutForm';
+import { MetadataDeletionImpactSummary } from '@/settings/data-model/components/MetadataDeletionImpactSummary';
 import { SettingsObjectIndexesSection } from '@/settings/data-model/object-details/components/tabs/SettingsObjectIndexesSection';
 import { SettingsObjectSearchSection } from '@/settings/data-model/object-details/components/tabs/SettingsObjectSearchSection';
 import { SettingsDataModelObjectSettingsFormCard } from '@/settings/data-model/objects/forms/components/SettingsDataModelObjectSettingsFormCard';
@@ -17,6 +19,7 @@ import { useModal } from '@/ui/layout/modal/hooks/useModal';
 import { styled } from '@linaria/react';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { useLingui } from '@lingui/react/macro';
+import { useState } from 'react';
 import { SettingsPath } from 'twenty-shared/types';
 import { IconArchive, IconTrash } from 'twenty-ui/icon';
 import { H2Title } from 'twenty-ui/typography';
@@ -59,9 +62,12 @@ export const ObjectSettings = ({
   const navigate = useNavigateSettings();
   const getIsMetadataItemCustom = useGetIsMetadataItemCustom();
   const { updateOneObjectMetadataItem } = useUpdateOneObjectMetadataItem();
-  const { deleteOneObjectMetadataItem } = useDeleteOneObjectMetadataItem();
+  const { deleteOneObjectMetadataItem, prepareDeleteOneObjectMetadataItem } =
+    useDeleteOneObjectMetadataItem();
   const { enqueueSuccessSnackBar } = useSnackBar();
   const { openModal, closeModal } = useModal();
+  const [preparedDeletion, setPreparedDeletion] =
+    useState<PreparedMetadataDeletion | null>(null);
 
   const isDDLLocked = useAtomStateValue(isDDLLockedState);
 
@@ -79,25 +85,45 @@ export const ObjectSettings = ({
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    const preparation = await prepareDeleteOneObjectMetadataItem(
+      objectMetadataItem.id,
+    );
+    setIsDeleting(false);
+
+    if (preparation.status === 'failed') {
+      return;
+    }
+
+    setPreparedDeletion(preparation.response);
     openModal(DELETE_OBJECT_MODAL_ID);
   };
 
   const confirmDelete = async () => {
+    if (preparedDeletion === null) {
+      return;
+    }
+
     setIsDeleting(true);
-    const result = await deleteOneObjectMetadataItem(objectMetadataItem.id);
+    const result = await deleteOneObjectMetadataItem(
+      objectMetadataItem.id,
+      preparedDeletion,
+    );
 
     if (result.status === 'successful') {
       enqueueSuccessSnackBar({
         message: t`Object deleted`,
       });
       closeModal(DELETE_OBJECT_MODAL_ID);
+      setPreparedDeletion(null);
       navigate(SettingsPath.Objects);
       return;
     }
 
     setIsDeleting(false);
     closeModal(DELETE_OBJECT_MODAL_ID);
+    setPreparedDeletion(null);
   };
 
   const objectLabel = objectMetadataItem.labelPlural;
@@ -200,10 +226,18 @@ export const ObjectSettings = ({
       <ConfirmationModal
         modalInstanceId={DELETE_OBJECT_MODAL_ID}
         title={t`Delete ${objectLabel} object?`}
-        subtitle={t`This will permanently delete the object and all its records. Type "yes" to confirm.`}
+        subtitle={
+          <MetadataDeletionImpactSummary
+            description={t`This will permanently delete the object and all its records. Type "yes" to confirm.`}
+            preparedDeletion={preparedDeletion}
+          />
+        }
         confirmButtonText={t`Delete`}
         onConfirmClick={confirmDelete}
-        onClose={() => closeModal(DELETE_OBJECT_MODAL_ID)}
+        onClose={() => {
+          closeModal(DELETE_OBJECT_MODAL_ID);
+          setPreparedDeletion(null);
+        }}
         confirmationValue="yes"
         confirmationPlaceholder="yes"
         loading={isDeleting}

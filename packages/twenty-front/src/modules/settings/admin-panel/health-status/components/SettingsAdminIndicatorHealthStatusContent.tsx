@@ -11,6 +11,7 @@ export const SettingsAdminIndicatorHealthStatusContent = () => {
     case HealthIndicatorId.database:
     case HealthIndicatorId.redis:
     case HealthIndicatorId.app:
+    case HealthIndicatorId.idealCrm:
       return <SettingsAdminJsonDataIndicatorHealthStatus />;
     case HealthIndicatorId.worker:
       return <SettingsAdminWorkerHealthStatus />;

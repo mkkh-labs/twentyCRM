@@ -1,4 +1,5 @@
 import { useDeleteOneIndexMetadataItem } from '@/object-metadata/hooks/useDeleteOneIndexMetadataItem';
+import { type PreparedMetadataDeletion } from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
@@ -23,6 +24,7 @@ import { type SettingsObjectIndexesTableItem } from '~/pages/settings/data-model
 import { getCompositeSubFieldLabel } from '@/object-record/object-filter-dropdown/utils/getCompositeSubFieldLabel';
 import { type CompositeFieldSubFieldName } from '@/settings/data-model/types/CompositeFieldSubFieldName';
 import { type CompositeFieldType } from '@/settings/data-model/types/CompositeFieldType';
+import { MetadataDeletionImpactSummary } from '@/settings/data-model/components/MetadataDeletionImpactSummary';
 
 type SettingsObjectIndexesSectionProps = {
   objectMetadataItem: EnrichedObjectMetadataItem;
@@ -52,13 +54,16 @@ export const SettingsObjectIndexesSection = ({
   const { t } = useLingui();
   const { openModal, closeModal } = useModal();
   const { enqueueSuccessSnackBar } = useSnackBar();
-  const { deleteOneIndexMetadataItem } = useDeleteOneIndexMetadataItem();
+  const { deleteOneIndexMetadataItem, prepareDeleteOneIndexMetadataItem } =
+    useDeleteOneIndexMetadataItem();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [hideSystemIndexes, setHideSystemIndexes] = useState(false);
   const [pendingDelete, setPendingDelete] =
     useState<SettingsObjectIndexesTableItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [preparedDeletion, setPreparedDeletion] =
+    useState<PreparedMetadataDeletion | null>(null);
 
   const tableItems = useMemo<SettingsObjectIndexesTableItem[]>(() => {
     const fieldsById = new Map(
@@ -112,17 +117,29 @@ export const SettingsObjectIndexesSection = ({
   const reachedCap = customIndexCount >= MAX_CUSTOM_INDEXES_PER_OBJECT;
   const canCreate = !isReadOnly && !reachedCap;
 
-  const handleRequestDelete = (item: SettingsObjectIndexesTableItem) => {
+  const handleRequestDelete = async (item: SettingsObjectIndexesTableItem) => {
+    setIsDeleting(true);
+    const preparation = await prepareDeleteOneIndexMetadataItem({
+      idToDelete: item.id,
+    });
+    setIsDeleting(false);
+
+    if (preparation.status === 'failed') {
+      return;
+    }
+
     setPendingDelete(item);
+    setPreparedDeletion(preparation.response);
     openModal(DELETE_INDEX_MODAL_ID);
   };
 
   const handleConfirmDelete = async () => {
-    if (pendingDelete === null) return;
+    if (pendingDelete === null || preparedDeletion === null) return;
     setIsDeleting(true);
 
     const result = await deleteOneIndexMetadataItem({
       idToDelete: pendingDelete.id,
+      preparedDeletion,
     });
 
     setIsDeleting(false);
@@ -131,6 +148,7 @@ export const SettingsObjectIndexesSection = ({
     if (result.status === 'successful') {
       enqueueSuccessSnackBar({ message: t`Index deleted` });
       setPendingDelete(null);
+      setPreparedDeletion(null);
     }
   };
 
@@ -198,10 +216,18 @@ export const SettingsObjectIndexesSection = ({
       <ConfirmationModal
         modalInstanceId={DELETE_INDEX_MODAL_ID}
         title={t`Delete this index?`}
-        subtitle={t`Queries that relied on it will fall back to a sequential scan. You can recreate it later.`}
+        subtitle={
+          <MetadataDeletionImpactSummary
+            description={t`Queries that relied on it will fall back to a sequential scan. You can recreate it later.`}
+            preparedDeletion={preparedDeletion}
+          />
+        }
         confirmButtonText={t`Delete`}
         onConfirmClick={handleConfirmDelete}
-        onClose={() => setPendingDelete(null)}
+        onClose={() => {
+          setPendingDelete(null);
+          setPreparedDeletion(null);
+        }}
         loading={isDeleting}
       />
     </StyledContent>

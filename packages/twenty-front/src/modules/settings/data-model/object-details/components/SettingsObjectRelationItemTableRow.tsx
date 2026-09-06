@@ -1,4 +1,3 @@
-import { useDeleteOneFieldMetadataItem } from '@/object-metadata/hooks/useDeleteOneFieldMetadataItem';
 import { useFieldMetadataItem } from '@/object-metadata/hooks/useFieldMetadataItem';
 import { useGetIsMetadataItemCustom } from '@/object-metadata/hooks/useGetIsMetadataItemCustom';
 import { useGetRelationMetadata } from '@/object-metadata/hooks/useGetRelationMetadata';
@@ -91,7 +90,6 @@ export const SettingsObjectRelationItemTableRow = ({
     }) || isDDLLocked;
 
   const { activateMetadataField } = useFieldMetadataItem();
-  const { deleteOneFieldMetadataItem } = useDeleteOneFieldMetadataItem();
 
   const linkToNavigate = getSettingsPath(SettingsPath.ObjectFieldEdit, {
     objectNamePlural: objectMetadataItem.namePlural,
@@ -245,15 +243,12 @@ export const SettingsObjectRelationItemTableRow = ({
             isCustomField={getIsMetadataItemCustom(fieldMetadataItem)}
             readonly={readonly}
             fieldMetadataItemId={fieldMetadataItem.id}
+            deleteActionText={t`Review deletion`}
             onEdit={navigateToFieldEdit}
             onActivate={() =>
               activateMetadataField(fieldMetadataItem.id, objectMetadataItem.id)
             }
-            onDelete={() =>
-              deleteOneFieldMetadataItem({
-                idToDelete: fieldMetadataItem.id,
-              })
-            }
+            onDelete={navigateToFieldEdit}
           />
         )}
       </TableCell>

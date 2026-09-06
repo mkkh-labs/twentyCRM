@@ -10,7 +10,8 @@ import { useUpdateOneFieldMetadataItem } from './useUpdateOneFieldMetadataItem';
 export const useFieldMetadataItem = () => {
   const { createOneFieldMetadataItem } = useCreateOneFieldMetadataItem();
   const { updateOneFieldMetadataItem } = useUpdateOneFieldMetadataItem();
-  const { deleteOneFieldMetadataItem } = useDeleteOneFieldMetadataItem();
+  const { deleteOneFieldMetadataItem, prepareDeleteOneFieldMetadataItem } =
+    useDeleteOneFieldMetadataItem();
 
   const createMetadataField = (
     input: Pick<
@@ -70,5 +71,6 @@ export const useFieldMetadataItem = () => {
     createMetadataField,
     deactivateMetadataField,
     deleteMetadataField: deleteOneFieldMetadataItem,
+    prepareDeleteMetadataField: prepareDeleteOneFieldMetadataItem,
   };
 };

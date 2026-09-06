@@ -1,4 +1,3 @@
-import { useMutation } from '@apollo/client/react';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { t } from '@lingui/core/macro';
 import { CrudOperationType } from 'twenty-shared/types';
@@ -6,32 +5,64 @@ import { CrudOperationType } from 'twenty-shared/types';
 import { useMetadataErrorHandler } from '@/metadata-error-handler/hooks/useMetadataErrorHandler';
 import { useUpdateMetadataStoreDraft } from '@/metadata-store/hooks/useUpdateMetadataStoreDraft';
 import { type MetadataRequestResult } from '@/object-metadata/types/MetadataRequestResult.type';
+import {
+  type PreparedMetadataDeletion,
+  useMetadataDeletionChangeSet,
+} from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
-import { DeleteOneIndexMetadataItemDocument } from '~/generated-metadata/graphql';
 
 export const useDeleteOneIndexMetadataItem = () => {
-  const [deleteOneIndexMetadataItemMutation] = useMutation(
-    DeleteOneIndexMetadataItemDocument,
-  );
+  const { applyPreparedMetadataDeletion, prepareMetadataDeletion } =
+    useMetadataDeletionChangeSet();
 
   const { handleMetadataError } = useMetadataErrorHandler();
   const { enqueueErrorSnackBar } = useSnackBar();
   const { removeFromDraft, applyChanges } = useUpdateMetadataStoreDraft();
 
-  const deleteOneIndexMetadataItem = async ({
+  const handleError = (error: unknown) => {
+    if (CombinedGraphQLErrors.is(error)) {
+      handleMetadataError(error, {
+        primaryMetadataName: 'index',
+        operationType: CrudOperationType.DELETE,
+      });
+    } else {
+      enqueueErrorSnackBar({ message: t`An error occurred.` });
+    }
+  };
+
+  const prepareDeleteOneIndexMetadataItem = async ({
     idToDelete,
   }: {
     idToDelete: string;
+  }): Promise<MetadataRequestResult<PreparedMetadataDeletion>> => {
+    try {
+      const response = await prepareMetadataDeletion({
+        targetType: 'INDEX',
+        targetId: idToDelete,
+      });
+
+      return { status: 'successful', response };
+    } catch (error) {
+      handleError(error);
+
+      return { status: 'failed', error };
+    }
+  };
+
+  const deleteOneIndexMetadataItem = async ({
+    idToDelete,
+    preparedDeletion,
+  }: {
+    idToDelete: string;
+    preparedDeletion: PreparedMetadataDeletion;
   }): Promise<
     MetadataRequestResult<
-      Awaited<ReturnType<typeof deleteOneIndexMetadataItemMutation>>
+      Awaited<ReturnType<typeof applyPreparedMetadataDeletion>>
     >
   > => {
     try {
-      const response = await deleteOneIndexMetadataItemMutation({
-        variables: {
-          idToDelete,
-        },
+      const response = await applyPreparedMetadataDeletion(preparedDeletion, {
+        acknowledgeDependencies: true,
       });
 
       removeFromDraft({ key: 'indexMetadataItems', itemIds: [idToDelete] });
@@ -42,14 +73,7 @@ export const useDeleteOneIndexMetadataItem = () => {
         response,
       };
     } catch (error) {
-      if (CombinedGraphQLErrors.is(error)) {
-        handleMetadataError(error, {
-          primaryMetadataName: 'index',
-          operationType: CrudOperationType.DELETE,
-        });
-      } else {
-        enqueueErrorSnackBar({ message: t`An error occurred.` });
-      }
+      handleError(error);
 
       return {
         status: 'failed',
@@ -60,5 +84,6 @@ export const useDeleteOneIndexMetadataItem = () => {
 
   return {
     deleteOneIndexMetadataItem,
+    prepareDeleteOneIndexMetadataItem,
   };
 };

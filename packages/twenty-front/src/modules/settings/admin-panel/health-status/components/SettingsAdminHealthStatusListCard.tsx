@@ -5,6 +5,7 @@ import {
   IconAppWindow,
   type IconComponent,
   IconDatabase,
+  IconKey,
   IconServer2,
   IconTool,
   IconUserCircle,
@@ -24,6 +25,7 @@ const HealthStatusIcons: { [k in HealthIndicatorId]: IconComponent } = {
   [HealthIndicatorId.worker]: IconTool,
   [HealthIndicatorId.connectedAccount]: IconUserCircle,
   [HealthIndicatorId.app]: IconAppWindow,
+  [HealthIndicatorId.idealCrm]: IconKey,
 };
 
 export const SettingsAdminHealthStatusListCard = ({
