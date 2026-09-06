@@ -7,7 +7,6 @@ import {
   type PageLayoutWidgetGridPosition,
   type WidgetType,
 } from 'twenty-shared/types';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   widgetPositionSchema,
   widgetConfigurationSchema,
@@ -19,6 +18,7 @@ import {
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
 import { type WidgetConfigurationInput } from 'src/modules/dashboard/tools/types/widget-configuration-input.type';
 import { computeDashboardIdentifierMaps } from 'src/modules/dashboard/tools/utils/compute-dashboard-identifier-maps.util';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 import { resolveWidgetFieldNamesToIds } from 'src/modules/dashboard/tools/utils/resolve-widget-field-names-to-metadata-ids.util';
 
 const widgetSchema = z.object({
@@ -124,6 +124,8 @@ AGGREGATION OPERATIONS: COUNT, SUM, AVG, MIN, MAX, COUNT_EMPTY, COUNT_NOT_EMPTY`
     }>;
   }) => {
     try {
+      getRequiredDashboardToolAuthContext(context);
+
       const tabTitle = parameters.tabTitle ?? 'Main';
       const widgets = parameters.widgets ?? [];
       const identifierMaps =
@@ -236,14 +238,12 @@ const createDashboardRecord = async (
   title: string,
   pageLayoutId: string,
 ): Promise<string> => {
-  const authContext = buildSystemAuthContext(context.workspaceId);
+  const authContext = getRequiredDashboardToolAuthContext(context);
 
   return deps.workspaceOrmManager.executeInWorkspaceContext(async () => {
     const dashboardRepository = deps.workspaceOrmManager.getRepository(
       'dashboard',
-      {
-        shouldBypassPermissionChecks: true,
-      },
+      context.rolePermissionConfig,
     );
 
     const position = await deps.recordPositionService.buildRecordPosition({

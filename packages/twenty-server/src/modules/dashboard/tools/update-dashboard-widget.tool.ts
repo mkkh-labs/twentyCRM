@@ -18,6 +18,7 @@ import {
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
 import { type WidgetConfigurationInput } from 'src/modules/dashboard/tools/types/widget-configuration-input.type';
 import { computeDashboardIdentifierMaps } from 'src/modules/dashboard/tools/utils/compute-dashboard-identifier-maps.util';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 import {
   getObjectMetadataId,
   resolveConfigurationFieldNamesToIds,
@@ -69,6 +70,8 @@ Only provide fields you want to change - others remain unchanged.`,
     configuration?: WidgetConfigurationInput;
   }) => {
     try {
+      getRequiredDashboardToolAuthContext(context);
+
       const { widgetId, objectName, configuration, ...rest } = parameters;
 
       const hasConfigurationUpdate =
