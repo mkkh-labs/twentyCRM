@@ -18,12 +18,15 @@ import { flatEntityMapsExceptionCodeToHttpStatus } from 'src/engine/metadata-mod
 import { InvalidMetadataException } from 'src/engine/metadata-modules/utils/exceptions/invalid-metadata.exception';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
 import { workspaceMigrationBuilderRestApiExceptionHandler } from 'src/engine/workspace-manager/workspace-migration/interceptors/utils/workspace-migration-builder-rest-api-exception-handler.util';
+import { workspaceMigrationV2ExceptionCodeToHttpStatus } from 'src/engine/workspace-manager/workspace-migration/utils/workspace-migration-v2-exception-code-to-http-status.util';
+import { WorkspaceMigrationV2Exception } from 'src/engine/workspace-manager/workspace-migration.exception';
 import { type CustomException } from 'src/utils/custom-exception';
 
 type CaughtException =
   | FieldMetadataException
   | InvalidMetadataException
   | WorkspaceMigrationBuilderException
+  | WorkspaceMigrationV2Exception
   | RestInputRequestParserException
   | FlatEntityMapsException;
 
@@ -32,6 +35,7 @@ type CaughtException =
   FieldMetadataException,
   InvalidMetadataException,
   WorkspaceMigrationBuilderException,
+  WorkspaceMigrationV2Exception,
   RestInputRequestParserException,
   FlatEntityMapsException,
 )
@@ -50,6 +54,21 @@ export class FieldMetadataRestApiExceptionFilter implements ExceptionFilter {
         response,
         i18n: this.i18nService.getI18nInstance(SOURCE_LOCALE),
       });
+    }
+
+    if (exception instanceof WorkspaceMigrationV2Exception) {
+      const statusCode = workspaceMigrationV2ExceptionCodeToHttpStatus(
+        exception.code,
+      );
+
+      return this.httpExceptionHandlerService.handleError(
+        exception,
+        response,
+        statusCode,
+        undefined,
+        undefined,
+        { shouldBeCapturedBySentry: statusCode >= 500 },
+      );
     }
 
     if (

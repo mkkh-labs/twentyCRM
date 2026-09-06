@@ -33,6 +33,18 @@ import {
   WorkspaceMigrationOrchestratorSuccessfulResult,
 } from 'src/engine/workspace-manager/workspace-migration/types/workspace-migration-orchestrator.type';
 import { WorkspaceMigrationRunnerService } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-runner/services/workspace-migration-runner.service';
+import { getDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
+import {
+  assertDestructiveMetadataChangeIsAuthorized,
+  type DestructiveMetadataChangeAuthorization,
+} from 'src/engine/workspace-manager/workspace-migration/utils/assert-destructive-metadata-change-is-authorized.util';
+
+type ValidateBuildAndRunWorkspaceMigrationFromToArgs =
+  WorkspaceMigrationOrchestratorBuildArgs & {
+    idByUniversalIdentifierByMetadataName?: IdByUniversalIdentifierByMetadataName;
+    dryRun?: boolean;
+    destructiveChangeAuthorization?: DestructiveMetadataChangeAuthorization;
+  };
 
 type ValidateBuildAndRunWorkspaceMigrationFromMatriceArgs = {
   workspaceId: string;
@@ -40,6 +52,7 @@ type ValidateBuildAndRunWorkspaceMigrationFromMatriceArgs = {
   isSystemBuild?: boolean;
   applicationUniversalIdentifier: string;
   dryRun?: boolean;
+  destructiveChangeAuthorization?: DestructiveMetadataChangeAuthorization;
 };
 
 type ValidateBuildAndRunWorkspaceMigrationFromRecordArgs = {
@@ -48,6 +61,7 @@ type ValidateBuildAndRunWorkspaceMigrationFromRecordArgs = {
   isSystemBuild?: boolean;
   applicationUniversalIdentifier: string;
   dryRun?: boolean;
+  destructiveChangeAuthorization?: DestructiveMetadataChangeAuthorization;
 };
 
 type ValidateBuildAndRunWorkspaceMigrationFromRecordInternalArgs =
@@ -63,6 +77,7 @@ type ComputeAndRunWorkspaceMigrationFromResolvedOperationsArgs = {
   isSystemBuild: boolean;
   applicationUniversalIdentifier: string;
   dryRun?: boolean;
+  destructiveChangeAuthorization?: DestructiveMetadataChangeAuthorization;
 } & FlatEntityMapsBundle;
 
 @Injectable()
@@ -85,18 +100,19 @@ export class WorkspaceMigrationValidateBuildAndRunService {
   }
 
   public async validateBuildAndRunWorkspaceMigrationFromTo(
-    args: WorkspaceMigrationOrchestratorBuildArgs & {
-      idByUniversalIdentifierByMetadataName?: IdByUniversalIdentifierByMetadataName;
-      dryRun?: boolean;
-    },
+    args: ValidateBuildAndRunWorkspaceMigrationFromToArgs,
   ): Promise<
     | WorkspaceMigrationOrchestratorFailedResult
     | (WorkspaceMigrationOrchestratorSuccessfulResult & {
         hasSchemaMetadataChanged: boolean;
       })
   > {
-    const { idByUniversalIdentifierByMetadataName, dryRun, ...buildArgs } =
-      args;
+    const {
+      destructiveChangeAuthorization,
+      idByUniversalIdentifierByMetadataName,
+      dryRun,
+      ...buildArgs
+    } = args;
 
     const buildStart = performance.now();
     const validateAndBuildResult =
@@ -161,6 +177,29 @@ export class WorkspaceMigrationValidateBuildAndRunService {
       };
     }
 
+    const executionContext = getDestructiveMetadataChangeExecutionContext();
+    const resolvedDestructiveChangeAuthorization =
+      destructiveChangeAuthorization ??
+      (args.buildOptions.isSystemBuild &&
+      executionContext?.source === 'SYSTEM_BUILD' &&
+      executionContext.workspaceId === args.workspaceId
+        ? {
+            source: 'SYSTEM_BUILD' as const,
+            workspaceId: args.workspaceId,
+            operationId: executionContext.operationId,
+          }
+        : undefined);
+
+    assertDestructiveMetadataChangeIsAuthorized({
+      actions: workspaceMigration.actions,
+      workspaceId: args.workspaceId,
+      isSystemBuild: args.buildOptions.isSystemBuild,
+      applicationUniversalIdentifier:
+        args.buildOptions.applicationUniversalIdentifier,
+      authorization: resolvedDestructiveChangeAuthorization,
+      executionContext,
+    });
+
     const actionCountsByTypeAndMetadataName: Record<string, number> = {};
 
     for (const action of workspaceMigration.actions) {
@@ -212,6 +251,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
     isSystemBuild = false,
     applicationUniversalIdentifier,
     dryRun,
+    destructiveChangeAuthorization,
   }: ValidateBuildAndRunWorkspaceMigrationFromMatriceArgs): Promise<
     | WorkspaceMigrationOrchestratorFailedResult
     | (WorkspaceMigrationOrchestratorSuccessfulResult & {
@@ -227,6 +267,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
       isSystemBuild,
       applicationUniversalIdentifier,
       dryRun,
+      destructiveChangeAuthorization,
     });
   }
 
@@ -283,6 +324,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
     applicationUniversalIdentifier,
     dryRun,
     skipSideEffectExpandEngine,
+    destructiveChangeAuthorization,
   }: ValidateBuildAndRunWorkspaceMigrationFromRecordInternalArgs): Promise<
     | WorkspaceMigrationOrchestratorFailedResult
     | (WorkspaceMigrationOrchestratorSuccessfulResult & {
@@ -336,6 +378,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
       flatApplicationMaps,
       allRelatedFlatEntityMaps,
       allMetadataNameCacheToCompute,
+      destructiveChangeAuthorization,
     });
   }
 
@@ -348,6 +391,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
     flatApplicationMaps,
     allRelatedFlatEntityMaps,
     allMetadataNameCacheToCompute,
+    destructiveChangeAuthorization,
   }: ComputeAndRunWorkspaceMigrationFromResolvedOperationsArgs): Promise<
     | WorkspaceMigrationOrchestratorFailedResult
     | (WorkspaceMigrationOrchestratorSuccessfulResult & {
@@ -383,6 +427,7 @@ export class WorkspaceMigrationValidateBuildAndRunService {
       additionalCacheDataMaps,
       idByUniversalIdentifierByMetadataName,
       dryRun,
+      destructiveChangeAuthorization,
     });
   }
 }
