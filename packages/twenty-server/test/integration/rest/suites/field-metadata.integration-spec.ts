@@ -15,6 +15,7 @@ import {
   assertRestApiErrorResponse,
   assertRestApiSuccessfulResponse,
 } from 'test/integration/rest/utils/rest-test-assertions.util';
+import { WorkspaceMigrationV2ExceptionCode } from 'twenty-shared/metadata';
 import { FeatureFlagKey, FieldMetadataType } from 'twenty-shared/types';
 
 type FieldShape = {
@@ -431,35 +432,42 @@ describe.each([
   });
 
   describe('DELETE /metadata/fields/:id', () => {
-    it('deletes the field and returns the deleted resource', async () => {
+    it('requires a change set before deleting the field', async () => {
       const { id } = await createTestFieldViaGraphql(parentObjectId);
 
-      const response = await makeRestAPIRequest({
-        method: 'delete',
-        path: `/metadata/fields/${id}`,
-        bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
-      });
+      try {
+        const response = await makeRestAPIRequest({
+          method: 'delete',
+          path: `/metadata/fields/${id}`,
+          bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
+        });
 
-      assertRestApiSuccessfulResponse(response);
-      const deleted = extractMetadataItemPayload<FieldShape>(
-        response.body,
-        'deleteOneField',
-      );
+        expect(response.status).toBe(409);
+        expect(response.body).toMatchObject({
+          statusCode: 409,
+          code: WorkspaceMigrationV2ExceptionCode.CHANGE_SET_REQUIRED,
+          messages: [
+            'Destructive metadata changes require explicit authorization.',
+          ],
+        });
 
-      expect(deleted.id).toBe(id);
-      if (isNewFormat) {
-        expect(response.body).not.toHaveProperty('data.deleteOneField');
-      } else {
-        expect(response.body).toHaveProperty('data.deleteOneField');
+        const getResponse = await makeRestAPIRequest({
+          method: 'get',
+          path: `/metadata/fields/${id}`,
+          bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
+        });
+
+        assertRestApiSuccessfulResponse(getResponse);
+
+        const retained = extractMetadataItemPayload<FieldShape>(
+          getResponse.body,
+          'field',
+        );
+
+        expect(retained.id).toBe(id);
+      } finally {
+        await cleanupTestField(id);
       }
-
-      const getResponse = await makeRestAPIRequest({
-        method: 'get',
-        path: `/metadata/fields/${id}`,
-        bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
-      });
-
-      assertRestApiErrorNotFoundResponse(getResponse);
     });
 
     it('returns 404 for an unknown id', async () => {

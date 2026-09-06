@@ -19,18 +19,6 @@ const baseParams = {
   files: [],
 };
 
-const getFirstWorkspaceConnectedAccountId = async (): Promise<string> => {
-  const [{ id }] = await global.testDataSource.query(
-    `SELECT id FROM core."connectedAccount"
-     WHERE "workspaceId" = $1 AND "archivedAt" IS NULL
-     ORDER BY "createdAt" ASC, id ASC
-     LIMIT 1`,
-    [WORKSPACE_ID],
-  );
-
-  return id;
-};
-
 const setVisibility = async (
   connectedAccountId: string,
   visibility: 'user' | 'workspace',
@@ -51,27 +39,28 @@ describe('EmailComposerService connected account resolution (integration)', () =
   });
 
   describe('when the caller names a connected account', () => {
-    it('uses that account, whoever owns it', async () => {
-      const result = await service.composeEmail(
-        { ...baseParams, connectedAccountId: JONY_CONNECTED_ACCOUNT_ID },
-        { workspaceId: WORKSPACE_ID, userWorkspaceId: PHIL_USER_WORKSPACE_ID },
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.success && result.data.connectedAccount.id).toBe(
-        JONY_CONNECTED_ACCOUNT_ID,
+    it('rejects a private account owned by another workspace member', async () => {
+      await expect(
+        service.composeEmail(
+          { ...baseParams, connectedAccountId: JONY_CONNECTED_ACCOUNT_ID },
+          {
+            workspaceId: WORKSPACE_ID,
+            userWorkspaceId: PHIL_USER_WORKSPACE_ID,
+          },
+        ),
+      ).rejects.toThrow(
+        'No connected account available for the current authority',
       );
     });
 
-    it('uses that account when there is no caller (workflow run)', async () => {
-      const result = await service.composeEmail(
-        { ...baseParams, connectedAccountId: JONY_CONNECTED_ACCOUNT_ID },
-        { workspaceId: WORKSPACE_ID },
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.success && result.data.connectedAccount.id).toBe(
-        JONY_CONNECTED_ACCOUNT_ID,
+    it('rejects a private account when caller authority is absent', async () => {
+      await expect(
+        service.composeEmail(
+          { ...baseParams, connectedAccountId: JONY_CONNECTED_ACCOUNT_ID },
+          { workspaceId: WORKSPACE_ID },
+        ),
+      ).rejects.toThrow(
+        'No connected account available for the current authority',
       );
     });
 
@@ -137,21 +126,26 @@ describe('EmailComposerService connected account resolution (integration)', () =
           workspaceId: WORKSPACE_ID,
           userWorkspaceId: UNKNOWN_USER_WORKSPACE_ID,
         }),
-      ).rejects.toThrow('No connected account available for user workspace');
+      ).rejects.toThrow(
+        'No connected account available for the current authority',
+      );
     });
 
-    it('takes the first workspace account when there is no caller (workflow run)', async () => {
-      const firstWorkspaceConnectedAccountId =
-        await getFirstWorkspaceConnectedAccountId();
+    it('uses a workspace-visible account when caller authority is absent', async () => {
+      await setVisibility(JONY_CONNECTED_ACCOUNT_ID, 'workspace');
 
-      const result = await service.composeEmail(baseParams, {
-        workspaceId: WORKSPACE_ID,
-      });
+      try {
+        const result = await service.composeEmail(baseParams, {
+          workspaceId: WORKSPACE_ID,
+        });
 
-      expect(result.success).toBe(true);
-      expect(result.success && result.data.connectedAccount.id).toBe(
-        firstWorkspaceConnectedAccountId,
-      );
+        expect(result.success).toBe(true);
+        expect(result.success && result.data.connectedAccount.id).toBe(
+          JONY_CONNECTED_ACCOUNT_ID,
+        );
+      } finally {
+        await setVisibility(JONY_CONNECTED_ACCOUNT_ID, 'user');
+      }
     });
   });
 });

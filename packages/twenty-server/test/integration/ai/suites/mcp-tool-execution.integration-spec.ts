@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import request from 'supertest';
+import { FeatureFlagKey } from 'twenty-shared/types';
 
+import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
 import { deleteRecordsByIds } from 'test/integration/utils/delete-records-by-ids';
 
 const TEST_WORKSPACE_SCHEMA = 'workspace_1wgvd1injqtife6y4rvfbu3h5';
@@ -115,6 +117,22 @@ const learnToolSchema = async (
 };
 
 describe('MCP tool execution (integration)', () => {
+  beforeAll(async () => {
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: true,
+      expectToFail: false,
+    });
+  });
+
+  afterAll(async () => {
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: false,
+      expectToFail: false,
+    });
+  });
+
   describe('create_note_target (morph relation join)', () => {
     let createdCompanyId: string | undefined;
     let createdNoteId: string | undefined;

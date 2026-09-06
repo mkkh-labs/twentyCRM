@@ -6,6 +6,8 @@ import {
   waitForWorkflowCompletion,
   waitForWorkflowRunStatus,
 } from 'test/integration/graphql/suites/workflow/utils/workflow-run-test.util';
+import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
+import { FeatureFlagKey } from 'twenty-shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
 import { SEED_APPLE_WORKSPACE_ID } from 'src/engine/workspace-manager/dev-seeder/core/constants/seeder-workspaces.constant';
@@ -22,10 +24,24 @@ const FORM_STEP_ID = '6e089bc9-aabd-435f-865f-f31c01c8f4a7';
 describe('Quick Lead Workflow (e2e)', () => {
   let createdWorkflowRunId: string | null = null;
 
+  beforeAll(async () => {
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: true,
+      expectToFail: false,
+    });
+  });
+
   afterAll(async () => {
     if (createdWorkflowRunId) {
       await destroyWorkflowRun(createdWorkflowRunId);
     }
+
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: false,
+      expectToFail: false,
+    });
   });
 
   describe('Workflow triggering', () => {

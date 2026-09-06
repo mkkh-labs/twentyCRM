@@ -12,6 +12,8 @@ import { type WorkflowIfElseAction } from 'src/modules/workflow/workflow-executo
 import { updateWorkflowVersionTrigger } from 'test/integration/graphql/suites/workflow/utils/update-workflow-version-trigger.util';
 
 const client = request(`http://localhost:${APP_PORT}`);
+const POLL_ATTEMPTS = 20;
+const POLL_INTERVAL_MS = 250;
 
 describe('If/Else Workflow (e2e)', () => {
   let createdWorkflowId: string | null = null;
@@ -21,6 +23,36 @@ describe('If/Else Workflow (e2e)', () => {
   let elseBranchEmptyNodeId: string | null = null;
   let elseIfBranchEmptyNodeId: string | null = null;
   let elseIfBranchId: string | null = null;
+
+  const waitForWorkflowStatuses = async (): Promise<string[]> => {
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+      const response = await client
+        .post('/graphql')
+        .set('Authorization', `Bearer ${APPLE_JANE_ADMIN_ACCESS_TOKEN}`)
+        .send({
+          query: `
+            query FindWorkflow($id: UUID!) {
+              workflow(filter: { id: { eq: $id } }) {
+                statuses
+              }
+            }
+          `,
+          variables: { id: createdWorkflowId },
+        });
+
+      expect(response.body.errors).toBeUndefined();
+
+      const statuses = response.body.data.workflow.statuses as string[];
+
+      if (statuses.includes('ACTIVE')) {
+        return statuses;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+
+    return [];
+  };
 
   beforeAll(async () => {
     const createWorkflowResponse = await client
@@ -431,7 +463,7 @@ describe('If/Else Workflow (e2e)', () => {
       expect(response.body.data.workflow.lastPublishedVersionId).toBe(
         createdWorkflowVersionId,
       );
-      expect(response.body.data.workflow.statuses).toContain('ACTIVE');
+      expect(await waitForWorkflowStatuses()).toContain('ACTIVE');
     });
 
     it('should verify If/Else workflow version has correct structure', async () => {
