@@ -25,6 +25,7 @@ describe('JwtAuthStrategy', () => {
   let workspaceCacheService: any;
   let coreEntityCacheService: any;
   let workspaceRepository: { findOne: jest.Mock };
+  let applicationStopService: { isApplicationStopped: jest.Mock };
 
   const jwt = {
     sub: 'sub-default',
@@ -47,6 +48,9 @@ describe('JwtAuthStrategy', () => {
     };
     workspaceRepository = {
       findOne: jest.fn(),
+    };
+    applicationStopService = {
+      isApplicationStopped: jest.fn().mockResolvedValue(false),
     };
 
     jwtWrapperService = {
@@ -140,6 +144,7 @@ describe('JwtAuthStrategy', () => {
         twentyConfigService,
       ),
       workspaceRepository as unknown as Repository<WorkspaceEntity>,
+      applicationStopService as never,
     );
 
   describe('API_KEY validation', () => {
@@ -409,6 +414,39 @@ describe('JwtAuthStrategy', () => {
   });
 
   describe('APPLICATION_ACCESS token validation', () => {
+    it('rejects an application token while its workspace kill switch is active', async () => {
+      const applicationId = randomUUID();
+      const workspaceId = randomUUID();
+
+      workspaceStore[workspaceId] = Object.assign(new WorkspaceEntity(), {
+        id: workspaceId,
+      });
+      applicationStore[workspaceId] = {
+        [applicationId]: {
+          id: applicationId,
+          universalIdentifier: 'application.example',
+        },
+      };
+      applicationStopService.isApplicationStopped.mockResolvedValue(true);
+      strategy = createStrategy();
+
+      await expect(
+        strategy.validate({
+          sub: applicationId,
+          type: JwtTokenTypeEnum.APPLICATION_ACCESS,
+          applicationId,
+          workspaceId,
+        } as JwtPayload),
+      ).rejects.toMatchObject({
+        code: AuthExceptionCode.FORBIDDEN_EXCEPTION,
+        message: 'Application is temporarily stopped',
+      });
+      expect(applicationStopService.isApplicationStopped).toHaveBeenCalledWith(
+        'application.example',
+        workspaceId,
+      );
+    });
+
     it('should allow a cleanup token when its exact workspace deletion is pending', async () => {
       const applicationId = randomUUID();
       const workspaceId = randomUUID();

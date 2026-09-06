@@ -119,9 +119,11 @@ describe('WorkflowCronTriggerCronJob', () => {
       expect(mockMessageQueueService.add).toHaveBeenCalledWith(
         WorkflowTriggerJob.name,
         {
+          triggerType: 'cron',
           workspaceId: WORKSPACE_1,
           workflowId: 'workflow-1',
           payload: {},
+          rootCorrelationId: expect.any(String),
         },
         { retryLimit: 3 },
       );
@@ -299,9 +301,11 @@ describe('WorkflowCronTriggerCronJob', () => {
       expect(mockMessageQueueService.add).toHaveBeenCalledWith(
         WorkflowTriggerJob.name,
         {
+          triggerType: 'cron',
           workspaceId: WORKSPACE_2,
           workflowId: 'workflow-1',
           payload: {},
+          rootCorrelationId: expect.any(String),
         },
         { retryLimit: 3 },
       );
@@ -338,9 +342,11 @@ describe('WorkflowCronTriggerCronJob', () => {
       expect(mockMessageQueueService.add).toHaveBeenCalledWith(
         WorkflowTriggerJob.name,
         {
+          triggerType: 'cron',
           workspaceId: WORKSPACE_2,
           workflowId: 'workflow-1',
           payload: {},
+          rootCorrelationId: expect.any(String),
         },
         { retryLimit: 3 },
       );

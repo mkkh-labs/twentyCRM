@@ -7,16 +7,16 @@ describe('buildAgentRolePermissionConfig', () => {
     ).toEqual({ intersectionOf: ['agent-role-id'] });
   });
 
-  it('uses the member role alone in run-as mode', () => {
+  it('intersects the agent and member roles in run-as mode', () => {
     expect(
       buildAgentRolePermissionConfig({
         agentRoleId: 'agent-role-id',
         runAsRoleId: 'run-as-role-id',
       }),
-    ).toEqual({ intersectionOf: ['run-as-role-id'] });
+    ).toEqual({ intersectionOf: ['agent-role-id', 'run-as-role-id'] });
   });
 
-  it('does not involve the agent role even when the member holds it', () => {
+  it('deduplicates the intersection when both roles are the same', () => {
     expect(
       buildAgentRolePermissionConfig({
         agentRoleId: 'agent-role-id',

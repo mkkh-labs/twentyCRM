@@ -119,24 +119,18 @@ describe('withResolvedToolAuthContext', () => {
     expect(storeDuringDispatch).toBe(providedAuthContext);
   });
 
-  it('should run the dispatch outside any auth context when no identity is resolvable', async () => {
+  it('should deny dispatch when no identity is resolvable', async () => {
     const dependencies = buildDependencies();
     const context = buildContext();
 
-    let storeDuringDispatch: WorkspaceAuthContext | undefined | null = null;
-    let contextDuringDispatch: ToolProviderContext | undefined;
+    const dispatch = jest.fn();
 
-    await withResolvedToolAuthContext(
-      { context, ...dependencies },
-      async (contextWithAuth) => {
-        storeDuringDispatch = workspaceAuthContextStorage.getStore();
-        contextDuringDispatch = contextWithAuth;
-      },
-    );
+    await expect(
+      withResolvedToolAuthContext({ context, ...dependencies }, dispatch),
+    ).rejects.toThrow('A validated tool identity is required');
 
     expect(dependencies.userRepository.findOne).not.toHaveBeenCalled();
-    expect(storeDuringDispatch).toBeUndefined();
-    expect(contextDuringDispatch).toBe(context);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('should not leak the auth context outside the dispatch', async () => {

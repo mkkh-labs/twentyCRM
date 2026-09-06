@@ -66,4 +66,20 @@ describe('selectConnectedAccountIdForCaller', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('allows only workspace-visible accounts for service callers', () => {
+    expect(
+      selectConnectedAccountIdForCaller({
+        connectedAccounts: [colleagueAccount, sharedAccount],
+      }),
+    ).toBe('shared-account-id');
+  });
+
+  it('returns undefined for a service caller when every account is private', () => {
+    expect(
+      selectConnectedAccountIdForCaller({
+        connectedAccounts: [colleagueAccount, ownAccount],
+      }),
+    ).toBeUndefined();
+  });
 });
