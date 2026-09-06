@@ -14,6 +14,7 @@ const WIDGET_ID = '20202020-ffff-4d02-bf25-6aeccf7ea419';
 const OPPORTUNITY_OBJECT_ID = '20202020-dddd-4d02-bf25-6aeccf7ea419';
 const AMOUNT_FIELD_ID = '20202020-bbbb-4d02-bf25-6aeccf7ea419';
 const STAGE_FIELD_ID = '20202020-cccc-4d02-bf25-6aeccf7ea419';
+const authContext = { workspace: { id: WORKSPACE_ID } };
 
 const flatObjectMetadataMaps = {
   byUniversalIdentifier: {
@@ -79,7 +80,11 @@ const createTool = (deps: ReturnType<typeof buildDeps>) =>
       DashboardToolDependencies,
       'pageLayoutWidgetService' | 'flatEntityMapsCacheService'
     >,
-    { workspaceId: WORKSPACE_ID },
+    {
+      workspaceId: WORKSPACE_ID,
+      authContext,
+      rolePermissionConfig: { unionOf: ['role-id'] },
+    } as never,
   );
 
 describe('update_dashboard_widget tool', () => {
