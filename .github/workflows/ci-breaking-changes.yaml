@@ -1,7 +1,7 @@
 name: GraphQL and OpenAPI Breaking Changes Detection
 
 on:
- pull_request:
+  pull_request:
     types: [opened, synchronize, edited]
     branches:
       - main
@@ -24,6 +24,8 @@ jobs:
       files: |
         package.json
         packages/twenty-server/**
+        packages/twenty-client-sdk/**
+        packages/twenty-sdk/**
         packages/twenty-emails/**
         packages/twenty-shared/**
         .github/workflows/ci-breaking-changes.yaml
@@ -54,7 +56,7 @@ jobs:
         image: clickhouse/clickhouse-server:25.8.8
         env:
           CLICKHOUSE_PASSWORD: clickhousePassword
-          CLICKHOUSE_URL: "http://default:clickhousePassword@localhost:8123/twenty"
+          CLICKHOUSE_URL: 'http://default:clickhousePassword@localhost:8123/twenty'
         ports:
           - 8123:8123
           - 9000:9000
@@ -239,7 +241,6 @@ jobs:
           echo "Current branch files downloaded:"
           ls -la current-*
 
-
       - name: Preserve current branch files
         run: |
           # Create a temp directory to store current branch files
@@ -410,7 +411,6 @@ jobs:
           echo "Main branch files downloaded:"
           ls -la main-*
 
-
       - name: Restore current branch files
         run: |
           # Move current branch files back to working directory
@@ -451,6 +451,11 @@ jobs:
           done
 
           echo "valid=$valid" >> $GITHUB_OUTPUT
+
+          if [ "$valid" != "true" ]; then
+            echo "::error::Public API contract validation is incomplete; refusing to skip breaking-change enforcement."
+            exit 1
+          fi
 
       - name: Install OpenAPI Diff Tool
         run: |
@@ -562,7 +567,7 @@ jobs:
               # Don't create diff file for no changes
             fi
           else
-            echo "⚠️ OpenAPI diff tool could not process the files"
+            echo "❌ OpenAPI diff tool could not process the files"
 
             echo "# REST API Analysis Error" > rest-api-diff.md
             echo "" >> rest-api-diff.md
@@ -573,8 +578,8 @@ jobs:
             docker run --rm -v "$(pwd):/specs" openapitools/openapi-diff:latest /specs/main-rest-api.json /specs/current-rest-api.json 2>&1 >> rest-api-diff.md || echo "Could not capture error output"
             echo "\`\`\`" >> rest-api-diff.md
 
-            # Don't fail the workflow for tool errors
-            echo "::warning::REST API analysis tool error - continuing workflow"
+            echo "::error::REST API compatibility is unknown; refusing to continue."
+            exit 1
           fi
 
       - name: Check REST Metadata API Breaking Changes
@@ -632,7 +637,7 @@ jobs:
               echo "✅ No changes detected in REST Metadata API"
             fi
           else
-            echo "⚠️ OpenAPI diff tool could not process the metadata API files"
+            echo "❌ OpenAPI diff tool could not process the metadata API files"
 
             echo "# REST Metadata API Analysis Error" > rest-metadata-api-diff.md
             echo "" >> rest-metadata-api-diff.md
@@ -643,8 +648,8 @@ jobs:
             docker run --rm -v "$(pwd):/specs" openapitools/openapi-diff:latest /specs/main-rest-metadata-api.json /specs/current-rest-metadata-api.json 2>&1 >> rest-metadata-api-diff.md || echo "Could not capture error output"
             echo "\`\`\`" >> rest-metadata-api-diff.md
 
-            # Don't fail the workflow for tool errors
-            echo "::warning::REST Metadata API analysis tool error - continuing workflow"
+            echo "::error::REST metadata API compatibility is unknown; refusing to continue."
+            exit 1
           fi
 
       - name: Fail on breaking changes
