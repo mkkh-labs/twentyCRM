@@ -166,6 +166,13 @@ import { DropBillingCustomerCreditBalanceMicroFastInstanceCommand } from 'src/da
 import { DropHasReachedCurrentPeriodCapFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1787906740819-drop-has-reached-current-period-cap';
 import { AddTimelineActivityHappensAtFieldFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1787918663364-add-timeline-activity-happens-at-field';
 import { AddPageLayoutIsFirstTabPinnedFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1787929843737-add-page-layout-is-first-tab-pinned';
+import { AddPolicyAuditEventFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788242612256-add-policy-audit-event';
+import { AddIdealCrmControlTablesFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788244465291-add-ideal-crm-control-tables';
+import { ExpandMetadataChangeSetFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788256931000-expand-metadata-change-set';
+import { AddOutboxConsumerReceiptFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788259000000-add-outbox-consumer-receipt';
+import { BindMetadataApprovalsFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788273684000-bind-metadata-approvals';
+import { InvalidateUnboundMetadataApprovalsSlowInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-slow-1788275870000-invalidate-unbound-metadata-approvals';
+import { BindOutboxReceiptToWorkspaceEventFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788653932000-bind-outbox-receipt-to-workspace-event';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -334,4 +341,11 @@ export const INSTANCE_COMMANDS = [
   DropHasReachedCurrentPeriodCapFastInstanceCommand,
   AddTimelineActivityHappensAtFieldFastInstanceCommand,
   AddPageLayoutIsFirstTabPinnedFastInstanceCommand,
+  AddPolicyAuditEventFastInstanceCommand,
+  AddIdealCrmControlTablesFastInstanceCommand,
+  ExpandMetadataChangeSetFastInstanceCommand,
+  AddOutboxConsumerReceiptFastInstanceCommand,
+  BindMetadataApprovalsFastInstanceCommand,
+  InvalidateUnboundMetadataApprovalsSlowInstanceCommand,
+  BindOutboxReceiptToWorkspaceEventFastInstanceCommand,
 ];
