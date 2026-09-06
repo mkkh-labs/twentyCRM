@@ -7,6 +7,9 @@ import { EmailingDomainEntity } from 'src/engine/core-modules/emailing-domain/em
 import { MessageSuppressionEntity } from 'src/engine/core-modules/emailing-domain/message-suppression.entity';
 import { UnsubscribeTopicEntity } from 'src/engine/core-modules/emailing-domain/unsubscribe-topic.entity';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
+import { PolicyModule } from 'src/engine/core-modules/policy/policy.module';
+import { UserWorkspaceModule } from 'src/engine/core-modules/user-workspace/user-workspace.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { MessageChannelMetadataModule } from 'src/engine/metadata-modules/message-channel/message-channel-metadata.module';
 import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
@@ -22,7 +25,9 @@ import { UnsubscribeTopicResolver } from 'src/modules/emailing/resolvers/unsubsc
 import { CampaignVariableService } from 'src/modules/emailing/services/campaign-variable.service';
 import { EmailBillingService } from 'src/modules/emailing/services/email-billing.service';
 import { EmailingDomainSenderService } from 'src/modules/emailing/services/emailing-domain-sender.service';
+import { EmailingSystemPolicyService } from 'src/modules/emailing/services/emailing-system-policy.service';
 import { MessageCampaignDraftService } from 'src/modules/emailing/services/message-campaign-draft.service';
+import { MessageCampaignPolicyService } from 'src/modules/emailing/services/message-campaign-policy.service';
 import { MessageCampaignStatisticsService } from 'src/modules/emailing/services/message-campaign-statistics.service';
 import { MessageCampaignService } from 'src/modules/emailing/services/message-campaign.service';
 import { MessageSuppressionService } from 'src/modules/emailing/services/message-suppression.service';
@@ -34,11 +39,14 @@ import { SaveCampaignTool } from 'src/modules/emailing/tools/save-campaign-tool'
     EmailingDomainModule,
     MessageChannelMetadataModule,
     FeatureFlagModule,
+    PolicyModule,
     PermissionsModule,
     UserRoleModule,
     BillingModule,
     WorkspaceEventEmitterModule,
     WorkspaceCacheModule,
+    UserWorkspaceModule,
+    WorkflowReliabilityModule,
     WorkspaceManyOrAllFlatEntityMapsCacheModule,
     TypeOrmModule.forFeature([
       MessageChannelEntity,
@@ -51,7 +59,9 @@ import { SaveCampaignTool } from 'src/modules/emailing/tools/save-campaign-tool'
   providers: [
     CampaignVariableService,
     EmailBillingService,
+    EmailingSystemPolicyService,
     MessageCampaignService,
+    MessageCampaignPolicyService,
     MessageCampaignDraftService,
     MessageCampaignStatisticsService,
     MessageSuppressionService,
