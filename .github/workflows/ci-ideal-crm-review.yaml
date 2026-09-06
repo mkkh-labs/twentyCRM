@@ -35,11 +35,11 @@ jobs:
       - name: Build shared contracts
         run: yarn nx build twenty-shared --skip-nx-cache
 
-      - name: Typecheck server
-        run: ./node_modules/.bin/tsgo -p packages/twenty-server/tsconfig.json --noEmit
-
       - name: Build server
         run: yarn nx build twenty-server --skip-nx-cache
+
+      - name: Typecheck server
+        run: ./node_modules/.bin/tsgo -p packages/twenty-server/tsconfig.json --noEmit
 
       - name: Run focused authority and outbox tests
         run: |
