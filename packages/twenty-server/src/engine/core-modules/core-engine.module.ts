@@ -28,6 +28,7 @@ import { TimelineCalendarEventModule } from 'src/engine/core-modules/calendar/ti
 import { CaptchaModule } from 'src/engine/core-modules/captcha/captcha.module';
 import { CloudflareModule } from 'src/engine/core-modules/cloudflare/cloudflare.module';
 import { CodeInterpreterModule } from 'src/engine/core-modules/code-interpreter/code-interpreter.module';
+import { ConfigurationVersionModule } from 'src/engine/core-modules/configuration-version/configuration-version.module';
 import { DnsManagerModule } from 'src/engine/core-modules/dns-manager/dns-manager.module';
 import { DpaModule } from 'src/engine/core-modules/dpa/dpa.module';
 import { EmailModule } from 'src/engine/core-modules/email/email.module';
@@ -48,12 +49,14 @@ import { loggerModuleFactory } from 'src/engine/core-modules/logger/logger.modul
 import { LogicFunctionModule } from 'src/engine/core-modules/logic-function/logic-function.module';
 import { MessageQueueModule } from 'src/engine/core-modules/message-queue/message-queue.module';
 import { messageQueueModuleFactory } from 'src/engine/core-modules/message-queue/message-queue.module-factory';
+import { MetadataChangeSetModule } from 'src/engine/core-modules/metadata-change-set/metadata-change-set.module';
 import { TimelineMessagingModule } from 'src/engine/core-modules/messaging/timeline-messaging.module';
 import { MessagingWebhooksModule } from 'src/modules/messaging-webhooks/messaging-webhooks.module';
 import { ConnectedAccountSyncWebhooksModule } from 'src/modules/connected-account-sync-webhooks/connected-account-sync-webhooks.module';
 import { MetricsModule } from 'src/engine/core-modules/metrics/metrics.module';
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { OpenApiModule } from 'src/engine/core-modules/open-api/open-api.module';
+import { PolicyModule } from 'src/engine/core-modules/policy/policy.module';
 import { PublicDomainModule } from 'src/engine/core-modules/public-domain/public-domain.module';
 import { RedisClientModule } from 'src/engine/core-modules/redis-client/redis-client.module';
 import { RedisClientService } from 'src/engine/core-modules/redis-client/redis-client.service';
@@ -61,11 +64,13 @@ import { SearchModule } from 'src/engine/core-modules/search/search.module';
 import { WorkspaceSSOModule } from 'src/engine/core-modules/sso/sso.module';
 import { WellKnownModule } from 'src/engine/core-modules/well-known/well-known.module';
 import { TelemetryModule } from 'src/engine/core-modules/telemetry/telemetry.module';
+import { TransactionalOutboxModule } from 'src/engine/core-modules/transactional-outbox/transactional-outbox.module';
 import { TwentyConfigModule } from 'src/engine/core-modules/twenty-config/twenty-config.module';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { UsageModule } from 'src/engine/core-modules/usage/usage.module';
 import { UserModule } from 'src/engine/core-modules/user/user.module';
 import { WorkflowApiModule } from 'src/engine/core-modules/workflow/workflow-api.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
 import { WorkspaceInvitationModule } from 'src/engine/core-modules/workspace-invitation/workspace-invitation.module';
 import { WorkspaceModule } from 'src/engine/core-modules/workspace/workspace.module';
 import { AiBillingModule } from 'src/engine/metadata-modules/ai/ai-billing/ai-billing.module';
@@ -101,6 +106,11 @@ import { FileModule } from './file/file.module';
     FileModule,
     RowLevelPermissionModule,
     OpenApiModule,
+    PolicyModule,
+    ConfigurationVersionModule,
+    MetadataChangeSetModule,
+    WorkflowReliabilityModule,
+    TransactionalOutboxModule,
     WellKnownModule,
     ApplicationRegistrationModule,
     ApplicationOAuthModule,

@@ -16,6 +16,7 @@ import { HealthIndicatorId } from 'src/engine/core-modules/admin-panel/enums/hea
 import { AppHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/app.health';
 import { ConnectedAccountHealth } from 'src/engine/core-modules/admin-panel/indicators/connected-account.health';
 import { DatabaseHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/database.health';
+import { IdealCrmHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/ideal-crm.health';
 import { RedisHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/redis.health';
 import { WorkerHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/worker.health';
 import { type WorkerQueueHealth } from 'src/engine/core-modules/admin-panel/types/worker-queue-health.type';
@@ -32,6 +33,7 @@ export class AdminPanelHealthService {
     private readonly workerHealth: WorkerHealthIndicator,
     private readonly connectedAccountHealth: ConnectedAccountHealth,
     private readonly appHealth: AppHealthIndicator,
+    private readonly idealCrmHealth: IdealCrmHealthIndicator,
     private readonly redisClient: RedisClientService,
   ) {}
 
@@ -41,6 +43,7 @@ export class AdminPanelHealthService {
     [HealthIndicatorId.worker]: this.workerHealth,
     [HealthIndicatorId.connectedAccount]: this.connectedAccountHealth,
     [HealthIndicatorId.app]: this.appHealth,
+    [HealthIndicatorId.idealCrm]: this.idealCrmHealth,
   };
 
   private transformStatus(status: HealthIndicatorStatus) {
@@ -152,12 +155,14 @@ export class AdminPanelHealthService {
       workerResult,
       accountSyncResult,
       appResult,
+      idealCrmResult,
     ] = await Promise.allSettled([
       this.databaseHealth.isHealthy(),
       this.redisHealth.isHealthy(),
       this.workerHealth.isHealthy(),
       this.connectedAccountHealth.isHealthy(),
       this.appHealth.isHealthy(),
+      this.idealCrmHealth.isHealthy(),
     ]);
 
     return {
@@ -190,6 +195,13 @@ export class AdminPanelHealthService {
           ...HEALTH_INDICATORS[HealthIndicatorId.app],
           status: this.getServiceStatus(appResult, HealthIndicatorId.app)
             .status,
+        },
+        {
+          ...HEALTH_INDICATORS[HealthIndicatorId.idealCrm],
+          status: this.getServiceStatus(
+            idealCrmResult,
+            HealthIndicatorId.idealCrm,
+          ).status,
         },
       ],
     };
@@ -234,7 +246,7 @@ export class AdminPanelHealthService {
       );
     } catch (error) {
       this.logger.error(
-        `Error getting metrics for ${queueName}: ${error.message}`,
+        `Error getting metrics for ${queueName}: ${error instanceof Error ? error.message : String(error)}`,
       );
       throw error;
     } finally {
@@ -314,7 +326,9 @@ export class AdminPanelHealthService {
 
       return result.slice(0, targetPoints);
     } catch (error) {
-      this.logger.error(`Error extracting metrics data: ${error.message}`);
+      this.logger.error(
+        `Error extracting metrics data: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -351,7 +365,7 @@ export class AdminPanelHealthService {
       };
     } catch (error) {
       this.logger.error(
-        `Error transforming metrics for graph: ${error.message}`,
+        `Error transforming metrics for graph: ${error instanceof Error ? error.message : String(error)}`,
       );
       throw error;
     }

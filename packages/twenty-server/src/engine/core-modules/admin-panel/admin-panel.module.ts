@@ -11,6 +11,7 @@ import { AdminPanelResolver } from 'src/engine/core-modules/admin-panel/admin-pa
 import { AppHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/app.health';
 import { ConnectedAccountHealth } from 'src/engine/core-modules/admin-panel/indicators/connected-account.health';
 import { DatabaseHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/database.health';
+import { IdealCrmHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/ideal-crm.health';
 import { RedisHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/redis.health';
 import { WorkerHealthIndicator } from 'src/engine/core-modules/admin-panel/indicators/worker.health';
 import { MaintenanceModeService } from 'src/engine/core-modules/admin-panel/maintenance-mode.service';
@@ -50,6 +51,10 @@ import { UserVarsModule } from 'src/engine/core-modules/user/user-vars/user-vars
 import { UserEntity } from 'src/engine/core-modules/user/user.entity';
 import { UserModule } from 'src/engine/core-modules/user/user.module';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
+import { PolicyAuditEventEntity } from 'src/engine/core-modules/policy/entities/policy-audit-event.entity';
+import { OutboxConsumerReceiptEntity } from 'src/engine/core-modules/transactional-outbox/entities/outbox-consumer-receipt.entity';
+import { OutboxEventEntity } from 'src/engine/core-modules/transactional-outbox/entities/outbox-event.entity';
+import { WorkflowEffectExecutionEntity } from 'src/engine/core-modules/workflow-reliability/entities/workflow-effect-execution.entity';
 import { AgentMessageEntity } from 'src/engine/metadata-modules/ai/ai-agent-execution/entities/agent-message.entity';
 import { AgentChatThreadEntity } from 'src/engine/metadata-modules/ai/ai-chat/entities/agent-chat-thread.entity';
 import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
@@ -65,6 +70,10 @@ import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspac
       AgentMessageEntity,
       BillingCustomerEntity,
       BillingPriceEntity,
+      OutboxEventEntity,
+      OutboxConsumerReceiptEntity,
+      PolicyAuditEventEntity,
+      WorkflowEffectExecutionEntity,
     ]),
     AuthModule,
     BillingModule,
@@ -108,6 +117,7 @@ import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspac
     AdminPanelQueueService,
     MaintenanceModeService,
     DatabaseHealthIndicator,
+    IdealCrmHealthIndicator,
     RedisHealthIndicator,
     WorkerHealthIndicator,
     ConnectedAccountHealth,
