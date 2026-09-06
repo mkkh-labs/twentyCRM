@@ -3,10 +3,12 @@ import { Logger } from '@nestjs/common';
 import { Command, CommandRunner, Option } from 'nest-commander';
 
 import { WorkspaceExportService } from 'src/database/commands/workspace-export/workspace-export.service';
+import { readWorkspaceExportEncryptionSecret } from 'src/database/commands/workspace-export/utils/read-workspace-export-encryption-secret.util';
 
 type WorkspaceExportCommandOptions = {
   workspaceId: string;
   outputPath: string;
+  encryptionKeyFile: string;
   tables?: string;
 };
 
@@ -40,6 +42,16 @@ export class WorkspaceExportCommand extends CommandRunner {
   }
 
   @Option({
+    flags: '--encryption-key-file <encryptionKeyFile>',
+    description:
+      'Owner-readable file containing the encryption secret for the export bundle',
+    required: true,
+  })
+  parseEncryptionKeyFile(value: string): string {
+    return value;
+  }
+
+  @Option({
     flags: '--tables <tables>',
     description:
       'Comma-separated workspace table names to export (uses nameSingular from ObjectMetadata)',
@@ -55,13 +67,16 @@ export class WorkspaceExportCommand extends CommandRunner {
     const tableFilter = options.tables?.split(',').map((table) => table.trim());
 
     try {
-      const filePath = await this.workspaceExportService.exportWorkspace({
+      const result = await this.workspaceExportService.exportWorkspace({
         workspaceId: options.workspaceId,
         outputPath: options.outputPath,
         tableFilter,
+        encryptionSecret: await readWorkspaceExportEncryptionSecret(
+          options.encryptionKeyFile,
+        ),
       });
 
-      this.logger.log(`Export complete: ${filePath}`);
+      this.logger.log(`Export complete: ${result.manifestFilePath}`);
     } catch (error) {
       this.logger.error('Export failed', error);
       throw error;
