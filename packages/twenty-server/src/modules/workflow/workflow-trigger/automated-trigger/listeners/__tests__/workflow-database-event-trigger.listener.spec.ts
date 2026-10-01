@@ -12,9 +12,11 @@ import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/work
 import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import { WorkflowDatabaseEventTriggerListener } from 'src/modules/workflow/workflow-trigger/automated-trigger/listeners/workflow-database-event-trigger.listener';
 import { WorkflowTriggerJob } from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const WORKFLOW_ID = '22222222-2222-4222-8222-222222222222';
+const WORKFLOW_VERSION_ID = '22222222-2222-4222-8222-222222222223';
 const OBJECT_METADATA_ID = '33333333-3333-4333-8333-333333333333';
 const RECORD_ID = '44444444-4444-4444-8444-444444444444';
 const SECOND_RECORD_ID = '55555555-5555-4555-8555-555555555555';
@@ -28,14 +30,23 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
   let recordRepository: { findOneBy: jest.Mock };
 
   const setTriggerMap = (
-    listeners: Array<{ workflowId: string; settings: object; type?: unknown }>,
+    listeners: Array<{
+      workflowId: string;
+      workflowVersionId?: string;
+      settings: object;
+      type?: unknown;
+    }>,
   ) => {
     workspaceCacheService.getOrRecompute.mockResolvedValue({
       workflowAutomatedTriggerMaps: {
         byWorkflowId: Object.fromEntries(
           listeners.map((listener) => [
             listener.workflowId,
-            { type: AutomatedTriggerType.DATABASE_EVENT, ...listener },
+            {
+              type: AutomatedTriggerType.DATABASE_EVENT,
+              workflowVersionId: WORKFLOW_VERSION_ID,
+              ...listener,
+            },
           ]),
         ),
       },
@@ -138,6 +149,16 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
           provide: WorkflowServiceAuthorityWorkspaceService,
           useValue: workflowServiceAuthority,
         },
+        {
+          provide: WorkflowTriggerProvenanceService,
+          useValue: {
+            sign: jest.fn().mockReturnValue({
+              signatureVersion: 1,
+              signatureKeyId: 'a'.repeat(64),
+              signature: 'b'.repeat(64),
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -204,11 +225,16 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
           policyVersion: 'p0-v1',
           workspaceId,
           workflowId,
+          workflowVersionId: WORKFLOW_VERSION_ID,
+          triggerConfigurationDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
           objectMetadataId: OBJECT_METADATA_ID,
           objectNameSingular: 'testObject',
           action,
           recordId,
           updatedFields,
+          signatureVersion: 1,
+          signatureKeyId: 'a'.repeat(64),
+          signature: 'b'.repeat(64),
         },
       });
       expect(jobData.databaseEvent).not.toHaveProperty('properties');

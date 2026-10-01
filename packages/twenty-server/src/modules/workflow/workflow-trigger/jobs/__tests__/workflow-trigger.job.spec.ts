@@ -1,4 +1,5 @@
 import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
+import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
 import { WorkflowVersionStatus } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
 import { WorkflowTriggerJob } from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
 import { buildWorkflowDatabaseEventReference } from 'src/modules/workflow/workflow-trigger/utils/build-workflow-database-event-reference.util';
@@ -7,6 +8,15 @@ const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const WORKFLOW_ID = '22222222-2222-4222-8222-222222222222';
 const WORKFLOW_VERSION_ID = '33333333-3333-4333-8333-333333333333';
 const ROOT_CORRELATION_ID = '44444444-4444-4444-8444-444444444444';
+const TRIGGER_SETTINGS = {
+  eventName: 'person.updated',
+  fields: ['name'],
+};
+const PROVENANCE_SIGNATURE = {
+  signatureVersion: 1 as const,
+  signatureKeyId: 'a'.repeat(64),
+  signature: 'b'.repeat(64),
+};
 
 const buildJob = () => {
   const applicationService = {
@@ -40,6 +50,10 @@ const buildJob = () => {
     getWorkflowVersionOrFail: jest.fn().mockResolvedValue({
       id: WORKFLOW_VERSION_ID,
       status: WorkflowVersionStatus.ACTIVE,
+      trigger: {
+        type: 'DATABASE_EVENT',
+        settings: TRIGGER_SETTINGS,
+      },
     }),
     getObjectMetadataInfo: jest.fn().mockResolvedValue({
       flatObjectMetadata: {
@@ -59,12 +73,16 @@ const buildJob = () => {
     scheduleRetry: jest.fn().mockResolvedValue(undefined),
     markDeadLettered: jest.fn().mockResolvedValue(undefined),
   };
+  const workflowTriggerProvenanceService = {
+    verify: jest.fn().mockReturnValue(true),
+  };
   const job = new WorkflowTriggerJob(
     applicationService as never,
     workspaceOrmManager as never,
     workflowCommonWorkspaceService as never,
     workflowRunnerWorkspaceService as never,
     workflowEffectService as never,
+    workflowTriggerProvenanceService as never,
   );
 
   return {
@@ -72,6 +90,9 @@ const buildJob = () => {
     job,
     workflowEffectService,
     workflowRunnerWorkspaceService,
+    workflowCommonWorkspaceService,
+    workflowTriggerProvenanceService,
+    recordRepository,
   };
 };
 
@@ -182,6 +203,8 @@ describe('WorkflowTriggerJob', () => {
     const databaseEvent = buildWorkflowDatabaseEventReference({
       workspaceId: WORKSPACE_ID,
       workflowId: WORKFLOW_ID,
+      workflowVersionId: WORKFLOW_VERSION_ID,
+      triggerConfigurationDigest: buildDeterministicDigest(TRIGGER_SETTINGS),
       objectMetadataId: '55555555-5555-4555-8555-555555555555',
       objectNameSingular: 'person',
       action: DatabaseEventAction.UPDATED,
@@ -193,6 +216,7 @@ describe('WorkflowTriggerJob', () => {
           updatedFields: ['name'],
         },
       },
+      signReference: () => PROVENANCE_SIGNATURE,
     });
 
     await job.handle(
@@ -213,6 +237,108 @@ describe('WorkflowTriggerJob', () => {
     expect(workflowEffectService.reserve).toHaveBeenCalledWith(
       expect.objectContaining({ effectKey: databaseEvent.idempotencyKey }),
     );
+  });
+
+  it('denies unauthenticated provenance before metadata or record access', async () => {
+    const {
+      job,
+      applicationService,
+      workflowCommonWorkspaceService,
+      workflowTriggerProvenanceService,
+      recordRepository,
+    } = buildJob();
+    const databaseEvent = buildWorkflowDatabaseEventReference({
+      workspaceId: WORKSPACE_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: WORKFLOW_VERSION_ID,
+      triggerConfigurationDigest: buildDeterministicDigest(TRIGGER_SETTINGS),
+      objectMetadataId: '55555555-5555-4555-8555-555555555555',
+      objectNameSingular: 'person',
+      action: DatabaseEventAction.UPDATED,
+      event: {
+        recordId: ROOT_CORRELATION_ID,
+        properties: {
+          before: { name: 'Before' },
+          after: { name: 'After' },
+          updatedFields: ['name'],
+        },
+      },
+      signReference: () => PROVENANCE_SIGNATURE,
+    });
+
+    workflowTriggerProvenanceService.verify.mockReturnValue(false);
+
+    await expect(
+      job.handle(
+        {
+          triggerType: 'database-event',
+          workspaceId: WORKSPACE_ID,
+          workflowId: WORKFLOW_ID,
+          databaseEvent,
+        },
+        jobContext,
+      ),
+    ).rejects.toThrow('provenance is invalid');
+    expect(
+      applicationService.findTwentyStandardApplicationOrThrow,
+    ).not.toHaveBeenCalled();
+    expect(
+      workflowCommonWorkspaceService.getObjectMetadataInfo,
+    ).not.toHaveBeenCalled();
+    expect(recordRepository.findOneBy).not.toHaveBeenCalled();
+  });
+
+  it('denies a stale trigger configuration before record access', async () => {
+    const {
+      job,
+      workflowCommonWorkspaceService,
+      workflowRunnerWorkspaceService,
+      recordRepository,
+    } = buildJob();
+    const databaseEvent = buildWorkflowDatabaseEventReference({
+      workspaceId: WORKSPACE_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: WORKFLOW_VERSION_ID,
+      triggerConfigurationDigest: buildDeterministicDigest(TRIGGER_SETTINGS),
+      objectMetadataId: '55555555-5555-4555-8555-555555555555',
+      objectNameSingular: 'person',
+      action: DatabaseEventAction.UPDATED,
+      event: {
+        recordId: ROOT_CORRELATION_ID,
+        properties: {
+          before: { name: 'Before' },
+          after: { name: 'After' },
+          updatedFields: ['name'],
+        },
+      },
+      signReference: () => PROVENANCE_SIGNATURE,
+    });
+
+    workflowCommonWorkspaceService.getWorkflowVersionOrFail.mockResolvedValue({
+      id: WORKFLOW_VERSION_ID,
+      status: WorkflowVersionStatus.ACTIVE,
+      trigger: {
+        type: 'DATABASE_EVENT',
+        settings: { ...TRIGGER_SETTINGS, fields: ['email'] },
+      },
+    });
+
+    await expect(
+      job.handle(
+        {
+          triggerType: 'database-event',
+          workspaceId: WORKSPACE_ID,
+          workflowId: WORKFLOW_ID,
+          databaseEvent,
+        },
+        jobContext,
+      ),
+    ).rejects.toThrow('trigger binding is stale');
+    expect(
+      workflowCommonWorkspaceService.getObjectMetadataInfo,
+    ).not.toHaveBeenCalled();
+    expect(recordRepository.findOneBy).not.toHaveBeenCalled();
+    expect(workflowRunnerWorkspaceService.run).not.toHaveBeenCalled();
   });
 
   it('schedules a bounded retry after a non-terminal runner failure', async () => {

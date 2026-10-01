@@ -8,11 +8,20 @@ describe('workflow database-event reference', () => {
   const workflowId = '20202020-0000-4000-8000-000000000002';
   const objectMetadataId = '20202020-0000-4000-8000-000000000003';
   const recordId = '20202020-0000-4000-8000-000000000004';
+  const workflowVersionId = '20202020-0000-4000-8000-000000000005';
+  const triggerConfigurationDigest = 'a'.repeat(64);
+  const signReference = jest.fn(() => ({
+    signatureVersion: 1 as const,
+    signatureKeyId: 'b'.repeat(64),
+    signature: 'c'.repeat(64),
+  }));
 
   const buildReference = () =>
     buildWorkflowDatabaseEventReference({
       workspaceId,
       workflowId,
+      workflowVersionId,
+      triggerConfigurationDigest,
       objectMetadataId,
       objectNameSingular: 'company',
       action: DatabaseEventAction.UPDATED,
@@ -26,6 +35,7 @@ describe('workflow database-event reference', () => {
         },
       },
       now,
+      signReference,
     });
 
   it('serializes only tenant-bound provenance and immutable references', () => {
@@ -41,6 +51,14 @@ describe('workflow database-event reference', () => {
     ).toBe(true);
     expect(JSON.stringify(reference)).not.toContain('sentinel-before');
     expect(JSON.stringify(reference)).not.toContain('sentinel-after');
+    expect(reference).toMatchObject({
+      workflowVersionId,
+      triggerConfigurationDigest,
+      signatureVersion: 1,
+      signatureKeyId: 'b'.repeat(64),
+      signature: 'c'.repeat(64),
+    });
+    expect(signReference).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a cross-workspace binding', () => {
@@ -80,6 +98,8 @@ describe('workflow database-event reference', () => {
     const secondReference = buildWorkflowDatabaseEventReference({
       workspaceId,
       workflowId,
+      workflowVersionId,
+      triggerConfigurationDigest,
       objectMetadataId,
       objectNameSingular: 'company',
       action: DatabaseEventAction.UPDATED,
@@ -93,6 +113,7 @@ describe('workflow database-event reference', () => {
         },
       },
       now: new Date('2026-09-01T00:01:00.000Z'),
+      signReference,
     });
 
     expect(firstReference.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
