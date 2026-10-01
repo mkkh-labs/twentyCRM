@@ -20,12 +20,12 @@ disposable context.
 
 ## Review-lane release blockers
 
-| Boundary | Current evidence | Required release proof |
-| -------- | ---------------- | ---------------------- |
-| Trigger ingress | Minimal references and scoped refetch exist; the digest is not authenticated provenance and does not bind current trigger configuration | Tamper, replay, revocation, field-policy, and cross-workspace tests deny before protected reads or effects |
-| Run-workflow queue | Trigger jobs use a strict envelope; `RunWorkflowJob` does not yet have equivalent schema, authority, correlation, and provenance enforcement | Malformed, legacy, foreign-workspace, and revoked payloads deny before workspace execution |
-| Delete/destroy triggers | Compatibility is preserved by denying these events | Approve and test a minimal tombstone contract, migration, replay, and rollback path |
-| Transactional outbox | Local tenant binding and stale-receipt reconciliation tests pass | Hosted queue, crash-recovery, cross-workspace, retention, alert, and fault-injection evidence |
+| Boundary                | Current evidence                                                                                                                             | Required release proof                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Trigger ingress         | Minimal references and scoped refetch exist; the digest is not authenticated provenance and does not bind current trigger configuration      | Tamper, replay, revocation, field-policy, and cross-workspace tests deny before protected reads or effects |
+| Run-workflow queue      | Trigger jobs use a strict envelope; `RunWorkflowJob` does not yet have equivalent schema, authority, correlation, and provenance enforcement | Malformed, legacy, foreign-workspace, and revoked payloads deny before workspace execution                 |
+| Delete/destroy triggers | Compatibility is preserved by denying these events                                                                                           | Approve and test a minimal tombstone contract, migration, replay, and rollback path                        |
+| Transactional outbox    | Local tenant binding and stale-receipt reconciliation tests pass                                                                             | Hosted queue, crash-recovery, cross-workspace, retention, alert, and fault-injection evidence              |
 
 ## Preflight
 

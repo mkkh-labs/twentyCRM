@@ -111,6 +111,5 @@ export class TwentyStandardApplicationService {
         'Multiple validation errors occurred while synchronizing twenty-standard application',
       );
     }
-
   }
 }

@@ -64,10 +64,12 @@ describe('outbox retention', () => {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const receiptRepository = {
-      find: jest.fn().mockResolvedValue([
-        { outboxEventId: 'event-1' },
-        { outboxEventId: 'event-2' },
-      ]),
+      find: jest
+        .fn()
+        .mockResolvedValue([
+          { outboxEventId: 'event-1' },
+          { outboxEventId: 'event-2' },
+        ]),
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };

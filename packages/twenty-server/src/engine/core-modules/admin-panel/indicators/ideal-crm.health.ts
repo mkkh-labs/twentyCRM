@@ -93,9 +93,7 @@ export class IdealCrmHealthIndicator {
       this.outboxConsumerReceiptRepository.countBy({
         state: 'PROCESSING',
         updatedAt: LessThan(
-          new Date(
-            Date.now() - OUTBOX_CONSUMER_PROCESSING_LEASE_MILLISECONDS,
-          ),
+          new Date(Date.now() - OUTBOX_CONSUMER_PROCESSING_LEASE_MILLISECONDS),
         ),
       }),
       this.workflowEffectExecutionRepository.countBy({
