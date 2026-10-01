@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { isDefined } from 'twenty-shared/utils';
+
 import { ApplicationService } from 'src/engine/core-modules/application/application.service';
 import { MetadataFlatEntity } from 'src/engine/metadata-modules/flat-entity/types/metadata-flat-entity.type';
 import { getMetadataFlatEntityMapsKey } from 'src/engine/metadata-modules/flat-entity/utils/get-metadata-flat-entity-maps-key.util';
@@ -7,6 +9,7 @@ import { getSubFlatEntityMapsByApplicationIdsOrThrow } from 'src/engine/metadata
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 import { TWENTY_STANDARD_ALL_METADATA_NAME } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-all-metadata-name.constant';
+import { STANDARD_ROLE } from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-role.constant';
 import { keepWorkspaceOwnedProperties } from 'src/engine/metadata-modules/flat-entity/utils/keep-workspace-owned-properties.util';
 import { computeTwentyStandardApplicationAllFlatEntityMaps } from 'src/engine/workspace-manager/twenty-standard-application/utils/twenty-standard-application-all-flat-entity-maps.constant';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
@@ -111,5 +114,28 @@ export class TwentyStandardApplicationService {
         'Multiple validation errors occurred while synchronizing twenty-standard application',
       );
     }
+
+    const { flatRoleMaps: refreshedFlatRoleMaps } =
+      await this.workspaceCacheService.getOrRecompute(workspaceId, [
+        'flatRoleMaps',
+      ]);
+    const adminRole =
+      refreshedFlatRoleMaps.byUniversalIdentifier[
+        STANDARD_ROLE.admin.universalIdentifier
+      ];
+
+    if (
+      !isDefined(adminRole) ||
+      adminRole.applicationId !== twentyStandardFlatApplication.id
+    ) {
+      throw new Error(
+        'Twenty standard application admin role is missing or invalid',
+      );
+    }
+
+    await this.applicationService.update(twentyStandardFlatApplication.id, {
+      workspaceId,
+      defaultRoleId: adminRole.id,
+    });
   }
 }
