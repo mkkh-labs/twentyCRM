@@ -7,7 +7,7 @@ import GraphQLJSON from 'graphql-type-json';
 import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
-import { CoreResolver } from 'src/engine/api/graphql/graphql-config/decorators/core-resolver.decorator';
+import { MetadataResolver } from 'src/engine/api/graphql/graphql-config/decorators/metadata-resolver.decorator';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { CreateMetadataChangeSetInput } from 'src/engine/core-modules/metadata-change-set/dtos/create-metadata-change-set.input';
 import { PrepareMetadataDeletionChangeSetInput } from 'src/engine/core-modules/metadata-change-set/dtos/prepare-metadata-deletion-change-set.input';
@@ -29,7 +29,7 @@ import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 import { type AllFlatEntityOperationRecordByMetadataName } from 'src/engine/metadata-modules/flat-entity/types/all-flat-entity-operation-record-by-metadata-name.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 
-@CoreResolver()
+@MetadataResolver()
 @UseGuards(
   WorkspaceAuthGuard,
   SettingsPermissionGuard(PermissionFlagType.DATA_MODEL),
