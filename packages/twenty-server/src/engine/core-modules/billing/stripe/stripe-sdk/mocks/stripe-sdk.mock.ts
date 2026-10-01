@@ -1,11 +1,16 @@
 /* @license Enterprise */
 
+import { randomUUID } from 'node:crypto';
+
 import type Stripe from 'stripe';
 
 export class StripeSDKMock {
   constructor(private readonly _apiKey: string) {}
 
   customers = {
+    create: (_params: Stripe.CustomerCreateParams) => ({
+      id: `cus_test_${randomUUID()}`,
+    }),
     update: (_id: string, _params?: Stripe.CustomerUpdateParams) => {
       return;
     },
