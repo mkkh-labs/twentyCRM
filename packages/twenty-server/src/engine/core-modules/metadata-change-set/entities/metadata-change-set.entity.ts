@@ -33,7 +33,54 @@ export type MetadataChangeSetRiskClass = 'R1' | 'R2' | 'R3';
 export type MetadataChangeSetRecoveryStrategy = 'ROLLBACK' | 'FORWARD_FIX';
 
 @Index('IDX_METADATA_CHANGE_SET_WORKSPACE_STATE', ['workspaceId', 'state'])
+@Index(
+  'IDX_METADATA_CHANGE_SET_WORKSPACE_APPROVAL',
+  ['workspaceId', 'approvalId'],
+  { unique: true, where: '"approvalId" IS NOT NULL' },
+)
 @Check('CHK_METADATA_CHANGE_SET_BASE_VERSION', '"baseMetadataVersion" >= 0')
+@Check(
+  'CHK_METADATA_CHANGE_SET_DEPENDENCY_DIGEST',
+  '"dependencyResolutionDigest" IS NULL OR "dependencyResolutionDigest" ~ \'^[a-f0-9]{64}$\'',
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_APPLY_TOKEN_DIGEST',
+  '"applyTokenDigest" IS NULL OR "applyTokenDigest" ~ \'^[a-f0-9]{64}$\'',
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_RISK_CLASS',
+  "\"riskClass\" IS NULL OR \"riskClass\" IN ('R1', 'R2', 'R3')",
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_RECOVERY_STRATEGY',
+  '"recoveryStrategy" IS NULL OR "recoveryStrategy" IN (\'ROLLBACK\', \'FORWARD_FIX\')',
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_APPROVAL_ACTION_DIGEST',
+  '"approvalActionDigest" IS NULL OR "approvalActionDigest" ~ \'^[a-f0-9]{64}$\'',
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_APPROVAL_ACTION',
+  '"approvalAction" IS NULL OR "approvalAction" IN (\'metadata.changeSet.apply\', \'metadata.changeSet.rollback\')',
+)
+@Check(
+  'CHK_METADATA_CHANGE_SET_APPROVAL_BINDING',
+  `(
+    (
+      "approvalId" IS NULL AND
+      "approvalAction" IS NULL AND
+      "approvalActionDigest" IS NULL AND
+      "approvalExpiresAt" IS NULL
+    ) OR (
+      "approvalId" IS NOT NULL AND
+      "approvalAction" IS NOT NULL AND
+      "approvalActionDigest" IS NOT NULL AND
+      "approvalExpiresAt" IS NOT NULL AND
+      "approvedByActorId" IS NOT NULL AND
+      "applyTokenDigest" IS NOT NULL
+    )
+  )`,
+)
 @Entity({ name: 'metadataChangeSet', schema: 'core' })
 export class MetadataChangeSetEntity extends WorkspaceRelatedEntity {
   @PrimaryColumn({ type: 'uuid' })
@@ -81,7 +128,7 @@ export class MetadataChangeSetEntity extends WorkspaceRelatedEntity {
   @Column({ type: 'varchar', length: 2, nullable: true })
   riskClass: MetadataChangeSetRiskClass | null;
 
-  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  @Column({ type: 'jsonb', default: [] })
   compatibilityFindings: string[];
 
   @Column({ type: 'integer', nullable: true })

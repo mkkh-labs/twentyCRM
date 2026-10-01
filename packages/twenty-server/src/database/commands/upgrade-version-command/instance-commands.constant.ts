@@ -173,6 +173,7 @@ import { AddOutboxConsumerReceiptFastInstanceCommand } from 'src/database/comman
 import { BindMetadataApprovalsFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788273684000-bind-metadata-approvals';
 import { InvalidateUnboundMetadataApprovalsSlowInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-slow-1788275870000-invalidate-unbound-metadata-approvals';
 import { BindOutboxReceiptToWorkspaceEventFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1788653932000-bind-outbox-receipt-to-workspace-event';
+import { AlignIdealCrmSchemaMetadataFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1790861186135-align-ideal-crm-schema-metadata';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -348,4 +349,5 @@ export const INSTANCE_COMMANDS = [
   BindMetadataApprovalsFastInstanceCommand,
   InvalidateUnboundMetadataApprovalsSlowInstanceCommand,
   BindOutboxReceiptToWorkspaceEventFastInstanceCommand,
+  AlignIdealCrmSchemaMetadataFastInstanceCommand,
 ];

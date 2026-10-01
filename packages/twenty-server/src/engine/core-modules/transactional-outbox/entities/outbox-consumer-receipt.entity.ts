@@ -3,11 +3,15 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryColumn,
+  Relation,
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
+import { OutboxEventEntity } from 'src/engine/core-modules/transactional-outbox/entities/outbox-event.entity';
 import { WorkspaceRelatedEntity } from 'src/engine/workspace-manager/types/workspace-related-entity';
 
 export type OutboxConsumerReceiptState =
@@ -28,6 +32,17 @@ export class OutboxConsumerReceiptEntity extends WorkspaceRelatedEntity {
 
   @Column({ type: 'uuid' })
   outboxEventId: string;
+
+  @ManyToOne(() => OutboxEventEntity, { onDelete: 'CASCADE' })
+  @JoinColumn([
+    {
+      name: 'workspaceId',
+      referencedColumnName: 'workspaceId',
+      foreignKeyConstraintName: 'FK_OUTBOX_CONSUMER_RECEIPT_EVENT',
+    },
+    { name: 'outboxEventId', referencedColumnName: 'id' },
+  ])
+  outboxEvent: Relation<OutboxEventEntity>;
 
   @Column({ type: 'varchar', length: 128 })
   consumerName: string;
