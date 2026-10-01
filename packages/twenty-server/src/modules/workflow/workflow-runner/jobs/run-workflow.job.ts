@@ -24,8 +24,21 @@ import {
   WorkflowRunExceptionCode,
 } from 'src/modules/workflow/workflow-runner/exceptions/workflow-run.exception';
 import { type RunWorkflowJobData } from 'src/modules/workflow/workflow-runner/types/run-workflow-job-data.type';
+import { validateRunWorkflowJobData } from 'src/modules/workflow/workflow-runner/utils/validate-run-workflow-job-data.util';
 import { WorkflowRunWorkspaceService } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.workspace-service';
 import { WorkflowTriggerType } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger.type';
+
+const isQueueIdentityBoundToWorkflowRun = (
+  jobId: string,
+  workflowRunId: string,
+) => {
+  const expectedPrefix = `${workflowRunId}-`;
+
+  return (
+    jobId.startsWith(expectedPrefix) &&
+    isValidUuid(jobId.slice(expectedPrefix.length))
+  );
+};
 
 @Processor({ queueName: MessageQueue.workflowQueue, scope: Scope.REQUEST })
 export class RunWorkflowJob {
@@ -43,23 +56,30 @@ export class RunWorkflowJob {
 
   @Process(RUN_WORKFLOW_JOB_NAME)
   async handle(
-    {
+    data: RunWorkflowJobData,
+    jobContext: MessageQueueJobContext,
+  ): Promise<void> {
+    if (!validateRunWorkflowJobData(data)) {
+      throw new WorkflowRunException(
+        'Protected workflow job envelope is invalid.',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
+    const {
       workflowRunId,
       lastExecutedStepId,
       stepIdsToRetry,
       workspaceId,
-      policySchemaVersion,
       rootCorrelationId,
       originPolicyDecisionId,
       approvalId,
-    }: RunWorkflowJobData,
-    jobContext: MessageQueueJobContext,
-  ): Promise<void> {
+    } = data;
+
     if (
       !isDefined(jobContext?.jobId) ||
       jobContext.jobName !== RUN_WORKFLOW_JOB_NAME ||
-      policySchemaVersion !== 1 ||
-      !isValidUuid(rootCorrelationId)
+      !isQueueIdentityBoundToWorkflowRun(jobContext.jobId, workflowRunId)
     ) {
       throw new WorkflowRunException(
         'Protected workflow job identity is missing or mismatched.',
@@ -216,7 +236,7 @@ export class RunWorkflowJob {
     approvalId,
   }: {
     workflowRunId: string;
-    stepIdsToRetry: string[];
+    stepIdsToRetry: readonly string[];
     workspaceId: string;
     jobId: string;
     rootCorrelationId: string;
@@ -234,7 +254,7 @@ export class RunWorkflowJob {
     }
 
     await this.workflowExecutorWorkspaceService.executeFromSteps({
-      stepIds: stepIdsToRetry,
+      stepIds: [...stepIdsToRetry],
       workflowRunId,
       workspaceId,
       jobId,
