@@ -17,11 +17,17 @@ import { WorkflowEffectService } from 'src/engine/core-modules/workflow-reliabil
 import { fromWorkspaceEntityToFlat } from 'src/engine/core-modules/workspace/utils/from-workspace-entity-to-flat.util';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { WorkflowVersionStatus } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
+import { type WorkflowTrigger } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger.type';
+import { WorkflowTriggerType } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger.type';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
 import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { WorkflowRunnerWorkspaceService } from 'src/modules/workflow/workflow-runner/workspace-services/workflow-runner.workspace-service';
 import { WorkflowTriggerExceptionCode } from 'src/modules/workflow/workflow-trigger/exceptions/workflow-trigger.exception';
-import { type WorkflowTriggerJobData } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
+import {
+  type WorkflowDatabaseEventReference,
+  type WorkflowTriggerJobData,
+} from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
 import { validateWorkflowDatabaseEventReference } from 'src/modules/workflow/workflow-trigger/utils/validate-workflow-database-event-reference.util';
 import { validateWorkflowTriggerJobData } from 'src/modules/workflow/workflow-trigger/utils/validate-workflow-trigger-job-data.util';
 
@@ -39,6 +45,7 @@ export class WorkflowTriggerJob {
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
     private readonly workflowRunnerWorkspaceService: WorkflowRunnerWorkspaceService,
     private readonly workflowEffectService: WorkflowEffectService,
+    private readonly workflowTriggerProvenanceService: WorkflowTriggerProvenanceService,
   ) {}
 
   @Process(WorkflowTriggerJob.name)
@@ -57,6 +64,13 @@ export class WorkflowTriggerJob {
       throw new Error(
         'Workflow trigger payload is invalid; correlation identity is required.',
       );
+    }
+
+    if (
+      data.triggerType === 'database-event' &&
+      !this.verifyDatabaseEventProvenance(data.databaseEvent)
+    ) {
+      throw new Error('Workflow database-event provenance is invalid.');
     }
 
     const rootCorrelationId =
@@ -128,6 +142,10 @@ export class WorkflowTriggerJob {
           ? await this.buildCurrentDatabaseEventPayload(
               data,
               rolePermissionConfig,
+              {
+                id: workflowVersion.id,
+                trigger: workflowVersion.trigger,
+              },
             )
           : data.payload;
       const effectKey =
@@ -227,6 +245,7 @@ export class WorkflowTriggerJob {
   private async buildCurrentDatabaseEventPayload(
     data: Extract<WorkflowTriggerJobData, { triggerType: 'database-event' }>,
     rolePermissionConfig: { unionOf: string[] },
+    currentWorkflowVersion: { id: string; trigger: WorkflowTrigger | null },
   ): Promise<object> {
     if (
       !validateWorkflowDatabaseEventReference(
@@ -236,6 +255,16 @@ export class WorkflowTriggerJob {
       )
     ) {
       throw new Error('Workflow database-event reference is invalid or stale.');
+    }
+
+    if (
+      currentWorkflowVersion.id !== data.databaseEvent.workflowVersionId ||
+      currentWorkflowVersion.trigger?.type !==
+        WorkflowTriggerType.DATABASE_EVENT ||
+      buildDeterministicDigest(currentWorkflowVersion.trigger.settings) !==
+        data.databaseEvent.triggerConfigurationDigest
+    ) {
+      throw new Error('Workflow database-event trigger binding is stale.');
     }
 
     const { flatObjectMetadata } =
@@ -268,5 +297,23 @@ export class WorkflowTriggerJob {
         updatedFields: data.databaseEvent.updatedFields,
       },
     };
+  }
+
+  private verifyDatabaseEventProvenance(
+    databaseEvent: WorkflowDatabaseEventReference,
+  ): boolean {
+    const {
+      payloadDigest: _payloadDigest,
+      signatureVersion,
+      signatureKeyId,
+      signature,
+      ...unsignedReference
+    } = databaseEvent;
+
+    return this.workflowTriggerProvenanceService.verify(unsignedReference, {
+      signatureVersion,
+      signatureKeyId,
+      signature,
+    });
   }
 }

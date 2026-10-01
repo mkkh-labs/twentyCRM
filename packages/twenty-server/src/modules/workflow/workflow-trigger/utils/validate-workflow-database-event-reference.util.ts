@@ -12,6 +12,8 @@ const REFERENCE_KEYS = new Set([
   'policyVersion',
   'workspaceId',
   'workflowId',
+  'workflowVersionId',
+  'triggerConfigurationDigest',
   'objectMetadataId',
   'objectNameSingular',
   'action',
@@ -22,6 +24,9 @@ const REFERENCE_KEYS = new Set([
   'rootCorrelationId',
   'createdAt',
   'expiresAt',
+  'signatureVersion',
+  'signatureKeyId',
+  'signature',
   'payloadDigest',
 ]);
 
@@ -43,6 +48,10 @@ export const validateWorkflowDatabaseEventReference = (
     !isValidUuid(value.workspaceId) ||
     typeof value.workflowId !== 'string' ||
     !isValidUuid(value.workflowId) ||
+    typeof value.workflowVersionId !== 'string' ||
+    !isValidUuid(value.workflowVersionId) ||
+    typeof value.triggerConfigurationDigest !== 'string' ||
+    !SHA_256_PATTERN.test(value.triggerConfigurationDigest) ||
     typeof value.objectMetadataId !== 'string' ||
     !isValidUuid(value.objectMetadataId) ||
     typeof value.recordId !== 'string' ||
@@ -65,6 +74,11 @@ export const validateWorkflowDatabaseEventReference = (
     !SHA_256_PATTERN.test(value.idempotencyKey) ||
     typeof value.payloadDigest !== 'string' ||
     !SHA_256_PATTERN.test(value.payloadDigest) ||
+    value.signatureVersion !== 1 ||
+    typeof value.signatureKeyId !== 'string' ||
+    !SHA_256_PATTERN.test(value.signatureKeyId) ||
+    typeof value.signature !== 'string' ||
+    !SHA_256_PATTERN.test(value.signature) ||
     typeof value.createdAt !== 'string' ||
     typeof value.expiresAt !== 'string' ||
     Number.isNaN(Date.parse(value.createdAt)) ||
@@ -80,6 +94,8 @@ export const validateWorkflowDatabaseEventReference = (
     schemaVersion: value.schemaVersion,
     workspaceId: value.workspaceId,
     workflowId: value.workflowId,
+    workflowVersionId: value.workflowVersionId,
+    triggerConfigurationDigest: value.triggerConfigurationDigest,
     objectMetadataId: value.objectMetadataId,
     objectNameSingular: value.objectNameSingular,
     action: value.action,

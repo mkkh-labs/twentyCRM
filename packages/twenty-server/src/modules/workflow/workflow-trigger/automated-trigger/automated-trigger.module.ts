@@ -12,6 +12,7 @@ import { AutomatedTriggerWorkspaceService } from 'src/modules/workflow/workflow-
 import { WorkflowCronTriggerCronCommand } from 'src/modules/workflow/workflow-trigger/automated-trigger/crons/commands/workflow-cron-trigger.cron.command';
 import { WorkflowCronTriggerCronJob } from 'src/modules/workflow/workflow-trigger/automated-trigger/crons/jobs/workflow-cron-trigger-cron.job';
 import { WorkflowDatabaseEventTriggerListener } from 'src/modules/workflow/workflow-trigger/automated-trigger/listeners/workflow-database-event-trigger.listener';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
 
 @Module({
   imports: [
@@ -26,9 +27,14 @@ import { WorkflowDatabaseEventTriggerListener } from 'src/modules/workflow/workf
   providers: [
     AutomatedTriggerWorkspaceService,
     WorkflowDatabaseEventTriggerListener,
+    WorkflowTriggerProvenanceService,
     WorkflowCronTriggerCronJob,
     WorkflowCronTriggerCronCommand,
   ],
-  exports: [AutomatedTriggerWorkspaceService, WorkflowCronTriggerCronCommand],
+  exports: [
+    AutomatedTriggerWorkspaceService,
+    WorkflowCronTriggerCronCommand,
+    WorkflowTriggerProvenanceService,
+  ],
 })
 export class AutomatedTriggerModule {}

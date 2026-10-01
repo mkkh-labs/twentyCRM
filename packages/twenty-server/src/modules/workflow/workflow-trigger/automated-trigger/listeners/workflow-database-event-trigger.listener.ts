@@ -17,6 +17,7 @@ import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
+import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
 import { isCachedDatabaseEventTrigger } from 'src/engine/core-modules/workflow/utils/cached-workflow-automated-trigger.util';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
@@ -28,6 +29,7 @@ import {
   type UpdateEventTriggerSettings,
 } from 'src/modules/workflow/workflow-trigger/automated-trigger/constants/automated-trigger-settings';
 import { WorkflowTriggerJob } from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
 import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import { type WorkflowTriggerJobData } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
@@ -36,6 +38,7 @@ import { validateWorkflowDatabaseEventReference } from 'src/modules/workflow/wor
 
 type DatabaseEventTriggerListener = {
   workflowId: string;
+  workflowVersionId: string;
   settings: AutomatedTriggerSettings;
 };
 
@@ -58,6 +61,7 @@ export class WorkflowDatabaseEventTriggerListener {
     private readonly workspaceOrmManager: WorkspaceOrmManager,
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
     private readonly workflowServiceAuthority: WorkflowServiceAuthorityWorkspaceService,
+    private readonly workflowTriggerProvenanceService: WorkflowTriggerProvenanceService,
   ) {}
 
   @OnDatabaseBatchEvent('*', DatabaseEventAction.CREATED)
@@ -280,10 +284,16 @@ export class WorkflowDatabaseEventTriggerListener {
           const databaseEvent = buildWorkflowDatabaseEventReference({
             workspaceId,
             workflowId: eventListener.workflowId,
+            workflowVersionId: eventListener.workflowVersionId,
+            triggerConfigurationDigest: buildDeterministicDigest(
+              eventListener.settings,
+            ),
             objectMetadataId: payload.objectMetadata.id,
             objectNameSingular: payload.objectMetadata.nameSingular,
             action,
             event: scopedEventPayload,
+            signReference: (reference) =>
+              this.workflowTriggerProvenanceService.sign(reference),
           });
 
           if (
