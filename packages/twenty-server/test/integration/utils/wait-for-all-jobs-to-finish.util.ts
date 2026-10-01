@@ -12,7 +12,6 @@ const PENDING_JOB_STATES = [
   'active',
   'prioritized',
   'waiting-children',
-  'delayed',
 ] as const;
 
 let redisConnection: IORedis | null = null;
@@ -34,18 +33,25 @@ const getQueues = (): Queue[] => {
   return queues;
 };
 
-const getPendingJobCountsByQueue = async (): Promise<
-  Record<string, number>
-> => {
+const getPendingJobCountsByQueue = async (
+  waitHorizon: number,
+): Promise<Record<string, number>> => {
   const countsByQueue = await Promise.all(
     getQueues().map(async (queue) => {
-      const jobCounts = await queue.getJobCounts(...PENDING_JOB_STATES);
-      const pendingCount = Object.values(jobCounts).reduce(
+      const [jobCounts, delayedJobs] = await Promise.all([
+        queue.getJobCounts(...PENDING_JOB_STATES),
+        queue.getDelayed(),
+      ]);
+      const runnableJobCount = Object.values(jobCounts).reduce(
         (sum, count) => sum + count,
         0,
       );
+      // Jobs scheduled beyond this wait cannot make progress in this test hook.
+      const delayedJobCount = delayedJobs.filter(
+        (job) => job.timestamp + job.delay <= waitHorizon,
+      ).length;
 
-      return [queue.name, pendingCount] as const;
+      return [queue.name, runnableJobCount + delayedJobCount] as const;
     }),
   );
 
@@ -72,12 +78,14 @@ const getActiveJobsFingerprint = async (
 
 export const waitForAllJobsToFinish = async (): Promise<void> => {
   const startedAt = Date.now();
+  const waitHorizon = startedAt + HARD_TIMEOUT_MS;
   let lastProgressAt = startedAt;
   let lastBusyFingerprint = '';
   let consecutiveQuietChecks = 0;
 
   while (consecutiveQuietChecks < REQUIRED_CONSECUTIVE_QUIET_CHECKS) {
-    const pendingJobCountsByQueue = await getPendingJobCountsByQueue();
+    const pendingJobCountsByQueue =
+      await getPendingJobCountsByQueue(waitHorizon);
     const pendingTotal = Object.values(pendingJobCountsByQueue).reduce(
       (sum, count) => sum + count,
       0,
