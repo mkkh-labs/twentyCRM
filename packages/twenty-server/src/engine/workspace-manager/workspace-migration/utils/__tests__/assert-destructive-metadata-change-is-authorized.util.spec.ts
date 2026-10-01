@@ -183,6 +183,54 @@ describe('assertDestructiveMetadataChangeIsAuthorized', () => {
     );
   });
 
+  it('denies a system build bound to another workspace', () => {
+    expect(() =>
+      assertDestructiveMetadataChangeIsAuthorized({
+        actions: [{ type: 'delete', metadataName: 'fieldMetadata' }],
+        workspaceId: WORKSPACE_ID,
+        isSystemBuild: true,
+        authorization: {
+          source: 'SYSTEM_BUILD',
+          workspaceId: WORKSPACE_ID,
+          operationId: 'workspace-upgrade',
+        },
+        executionContext: {
+          source: 'SYSTEM_BUILD',
+          workspaceId: '22222222-2222-4222-8222-222222222222',
+          operationId: 'workspace-upgrade',
+        },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: WorkspaceMigrationV2ExceptionCode.CHANGE_SET_REQUIRED,
+      }),
+    );
+  });
+
+  it('denies a system build bound to another operation', () => {
+    expect(() =>
+      assertDestructiveMetadataChangeIsAuthorized({
+        actions: [{ type: 'delete', metadataName: 'fieldMetadata' }],
+        workspaceId: WORKSPACE_ID,
+        isSystemBuild: true,
+        authorization: {
+          source: 'SYSTEM_BUILD',
+          workspaceId: WORKSPACE_ID,
+          operationId: 'workspace-upgrade',
+        },
+        executionContext: {
+          source: 'SYSTEM_BUILD',
+          workspaceId: WORKSPACE_ID,
+          operationId: 'another-operation',
+        },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: WorkspaceMigrationV2ExceptionCode.CHANGE_SET_REQUIRED,
+      }),
+    );
+  });
+
   it('denies an application-manifest migration outside its active context', () => {
     const applicationUniversalIdentifier =
       '44444444-4444-4444-8444-444444444444';

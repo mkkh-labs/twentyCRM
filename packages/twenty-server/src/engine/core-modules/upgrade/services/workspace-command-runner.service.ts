@@ -7,6 +7,7 @@ import { type RegisteredWorkspaceCommand } from 'src/engine/core-modules/upgrade
 import { UpgradeMigrationService } from 'src/engine/core-modules/upgrade/services/upgrade-migration.service';
 import { UpgradeStatusService } from 'src/engine/core-modules/upgrade/services/upgrade-status.service';
 import { formatUpgradeLog } from 'src/engine/core-modules/upgrade/utils/format-upgrade-log.util';
+import { withDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
 
 type WorkspaceCommandEntry = Pick<
   RegisteredWorkspaceCommand,
@@ -119,13 +120,21 @@ export class WorkspaceCommandRunnerService {
     const { name, command: workspaceCommand } = workspaceCommandEntry;
 
     try {
-      await workspaceCommand.runOnWorkspace({
-        options,
-        workspaceId,
-        dataSource: iteratorContext.dataSource,
-        index: iteratorContext.index,
-        total: iteratorContext.total,
-      });
+      await withDestructiveMetadataChangeExecutionContext(
+        {
+          source: 'SYSTEM_BUILD',
+          workspaceId,
+          operationId: name,
+        },
+        () =>
+          workspaceCommand.runOnWorkspace({
+            options,
+            workspaceId,
+            dataSource: iteratorContext.dataSource,
+            index: iteratorContext.index,
+            total: iteratorContext.total,
+          }),
+      );
 
       if (!options.dryRun) {
         await this.upgradeMigrationService.recordUpgradeMigration({
