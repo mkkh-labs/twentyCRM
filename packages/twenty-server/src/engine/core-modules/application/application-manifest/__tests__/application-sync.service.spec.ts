@@ -54,6 +54,7 @@ describe('ApplicationSyncService', () => {
     };
     const applicationStopService = {
       stop: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
     };
     const service = new ApplicationSyncService(
       applicationService as never,
@@ -121,6 +122,10 @@ describe('ApplicationSyncService', () => {
       APPLICATION_ID,
       WORKSPACE_ID,
     );
+    expect(applicationStopService.remove).toHaveBeenCalledWith(
+      APPLICATION_ID,
+      WORKSPACE_ID,
+    );
     expect(applicationService.delete).toHaveBeenCalledWith(
       APPLICATION_ID,
       WORKSPACE_ID,
@@ -138,6 +143,9 @@ describe('ApplicationSyncService', () => {
     ).toBeLessThan(deleteApplicationResources.mock.invocationCallOrder[0]);
     expect(deleteApplicationResources.mock.invocationCallOrder[0]).toBeLessThan(
       applicationService.delete.mock.invocationCallOrder[0],
+    );
+    expect(applicationService.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      applicationStopService.remove.mock.invocationCallOrder[0],
     );
   });
 
@@ -173,6 +181,7 @@ describe('ApplicationSyncService', () => {
       .mockRejectedValue(new Error('resource cleanup unavailable'));
     const applicationStopService = {
       stop: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
     };
     const service = new ApplicationSyncService(
       applicationService as never,
@@ -200,6 +209,7 @@ describe('ApplicationSyncService', () => {
     ).rejects.toMatchObject({ code: 'UNINSTALL_ERROR' });
 
     expect(applicationStopService.stop).toHaveBeenCalled();
+    expect(applicationStopService.remove).not.toHaveBeenCalled();
     expect(deleteApplicationResources).toHaveBeenCalled();
     expect(applicationService.delete).not.toHaveBeenCalled();
     expect(

@@ -449,6 +449,10 @@ export class ApplicationSyncService {
       applicationUniversalIdentifier,
       workspaceId,
     );
+    await this.applicationStopService.remove(
+      applicationUniversalIdentifier,
+      workspaceId,
+    );
 
     return validateAndBuildResult.workspaceMigration;
   }
