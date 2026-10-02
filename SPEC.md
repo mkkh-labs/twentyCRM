@@ -1,6 +1,6 @@
 ---
 title: Twenty CRM Ideal CRM Implementation Specification
-version: 1.2.19
+version: 1.2.20
 status: conditional
 created_date: 2026-09-01
 tags: [ideal-crm, security, workflows, policy, reliability]
@@ -41,7 +41,7 @@ enabling protected agent writes or automated side effects in production.
 | M3 Workflow Reliability    | Lifecycle validator, deterministic effect ledger, CAS reservation/transitions, fail-closed runtime provider registry, bounded provider contract, uncertain-outcome reconciliation, deterministic campaign jobs, and queue-persisted Stripe snapshots                                | Duplicate, transition-race, provider-registration/capability, trigger replay, queue identity, campaign provider/persistence uncertainty, billing retry, and provider request-key tests |
 | M5 Metadata Change Sets    | Lifecycle, dependency digest/acknowledgement, base-version/CAS guards, policy-bound apply/rollback, configuration snapshots, and object/field/index deletion routing                                                                                                                | Unit/resolver/UI tests, full builds, and live authorized/denied core GraphQL checks pass; destructive deletion paths are change-set-backed                                             |
 | M6 Transactional Outbox    | Same-transaction API, workflow/configuration domain adoption, versioned queue publisher, dispatcher cron, consumer receipts, retries, dead-letter/reconciliation, retention, and operations UI                                                                                      | PostgreSQL commit/rollback, dispatcher/publisher/consumer/retention, and live operations-query authorization pass; target queue operations remain G8                                   |
-| M7 Contract Versioning     | Immutable metadata snapshots, universal-ID diff/classification, query/UI comparison, and fail-closed GraphQL/OpenAPI/SDK CI coverage                                                                                                                                                | Snapshot/diff/resolver, live authorization, and production-build checks pass; hosted CI execution remains external evidence                                                            |
+| M7 Contract Versioning     | Immutable metadata snapshots, universal-ID diff/classification, query/UI comparison, and fail-closed GraphQL/OpenAPI/SDK CI coverage                                                                                                                                                | Snapshot/diff/resolver, live authorization, production-build, and exact-SHA hosted API compatibility checks pass; deployed target compatibility remains G8                             |
 | M8 Approval + Admin UX     | Security-permission/access-token guarded approvals plus audit, workflow, outbox, change-set, and configuration-version operator surfaces                                                                                                                                            | Backend negative tests, UI tests, complete frontend suite, production builds, the prior 13-test browser suite, and focused 9-test test/production-mode security suites pass            |
 | M9 Extension Guardrails    | Agent/run-as intersection, stopped-application token denial, ordered uninstall cleanup, production local-driver denial, Lambda VPC/resource revalidation, env-only `LOGIC_FUNCTION_LAMBDA_RESERVED_CONCURRENCY` defaulting to one, and manifest dry-run                             | Unit/fault/drift tests pass; deployed security-group egress, account quota/capacity, IAM, secret custody, and provider runtime evidence remain G8                                      |
 | M10 Recovery + Portability | Version-bound AES-256-GCM export/import, SHA-256 manifest verification, fail-if-exists restore, transaction rollback, identity-conflict denial, filtered active-table DDL, and physical source-schema nullability preservation                                                      | 11 suites/54 tests pass; a fresh disposable encrypted export/import, rollback, exact row/schema parity, and duplicate-import denial drill pass                                         |
@@ -69,6 +69,18 @@ exact-key, schema-versioned UUID envelope before workspace execution. Focused
 tamper, expiry, replay, stale-binding, malformed, legacy, and cross-workspace
 negative coverage passes locally. Delete/destroy event triggers remain denied
 until a separately approved minimal tombstone contract exists.
+
+## Hosted closeout evidence
+
+Qualified code SHA `b97b518d9a7ed921968fc0aaf8a1e9e34bf379a9` passed the
+exact-SHA source-push matrix: 25 workflows succeeded and three dispatch-only
+workflows skipped. The Server workflow completed 38 successful jobs and one
+legitimate path skip, including all 16 integration shards, cross-version
+upgrade, and pending migration/code-generation checks. Front attempt 2 passed
+22 of 22 jobs after a failed-job-only rerun cleared a transient browser-runner
+iframe reload. One cancelled API-diff run was superseded by successful
+same-SHA replacements. No failed or pending required check remains for the
+qualified code SHA.
 
 ## Release gates
 
