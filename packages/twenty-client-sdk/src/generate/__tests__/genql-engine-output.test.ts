@@ -89,6 +89,7 @@ describe('Vendored genql engine output', () => {
   it('renders schema types byte-identically', async () => {
     const schemaTypes = await readFile(join(outputPath, 'schema.ts'), 'utf-8');
 
+    expect(schemaTypes).not.toMatch(/[ \t]+$/mu);
     expect(schemaTypes).toMatchSnapshot();
   });
 
