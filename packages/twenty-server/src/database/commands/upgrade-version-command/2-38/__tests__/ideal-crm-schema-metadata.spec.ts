@@ -1,10 +1,27 @@
 import { getMetadataArgsStorage, type QueryRunner } from 'typeorm';
 
-import { AlignIdealCrmSchemaMetadataFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-fast-1790861186135-align-ideal-crm-schema-metadata';
+import { AlignIdealCrmSchemaMetadataSlowInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-slow-1790861186135-align-ideal-crm-schema-metadata';
+import { BackfillTwentyStandardApplicationDefaultRoleSlowInstanceCommand } from 'src/database/commands/upgrade-version-command/2-38/2-38-instance-command-slow-1790863222346-backfill-twenty-standard-application-default-role';
+import { INSTANCE_COMMANDS } from 'src/database/commands/upgrade-version-command/instance-commands.constant';
+import { getRegisteredInstanceCommandMetadata } from 'src/engine/core-modules/upgrade/decorators/registered-instance-command.decorator';
 import { MetadataChangeSetEntity } from 'src/engine/core-modules/metadata-change-set/entities/metadata-change-set.entity';
 import { OutboxConsumerReceiptEntity } from 'src/engine/core-modules/transactional-outbox/entities/outbox-consumer-receipt.entity';
 
 describe('Ideal CRM schema metadata', () => {
+  it('registers post-cursor commands in the slow instance lane', () => {
+    expect(
+      getRegisteredInstanceCommandMetadata(
+        AlignIdealCrmSchemaMetadataSlowInstanceCommand,
+      )?.type,
+    ).toBe('slow');
+    expect(INSTANCE_COMMANDS).toEqual(
+      expect.arrayContaining([
+        AlignIdealCrmSchemaMetadataSlowInstanceCommand,
+        BackfillTwentyStandardApplicationDefaultRoleSlowInstanceCommand,
+      ]),
+    );
+  });
+
   it('keeps metadata change-set constraints visible to schema generation', () => {
     const metadataStorage = getMetadataArgsStorage();
     const checkNames = metadataStorage.checks
@@ -38,7 +55,8 @@ describe('Ideal CRM schema metadata', () => {
     const metadataStorage = getMetadataArgsStorage();
     const relation = metadataStorage.relations.find(
       ({ propertyName, target }) =>
-        target === OutboxConsumerReceiptEntity && propertyName === 'outboxEvent',
+        target === OutboxConsumerReceiptEntity &&
+        propertyName === 'outboxEvent',
     );
     const joinColumns = metadataStorage.joinColumns
       .filter(
@@ -70,7 +88,7 @@ describe('Ideal CRM schema metadata', () => {
   it('normalizes schema metadata without removing security constraints', async () => {
     const query = jest.fn().mockResolvedValue(undefined);
     const queryRunner = { query } as unknown as QueryRunner;
-    const command = new AlignIdealCrmSchemaMetadataFastInstanceCommand();
+    const command = new AlignIdealCrmSchemaMetadataSlowInstanceCommand();
 
     await command.up(queryRunner);
 
