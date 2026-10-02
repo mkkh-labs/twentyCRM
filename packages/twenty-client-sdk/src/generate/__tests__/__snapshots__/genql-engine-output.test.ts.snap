@@ -101,7 +101,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isNode"')
       return Node_possibleTypes.includes(obj.__typename)
     }
-    
 
 
     const SearchResult_possibleTypes: string[] = ['Person','Company']
@@ -109,7 +108,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isSearchResult"')
       return SearchResult_possibleTypes.includes(obj.__typename)
     }
-    
 
 
     const Person_possibleTypes: string[] = ['Person']
@@ -117,7 +115,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isPerson"')
       return Person_possibleTypes.includes(obj.__typename)
     }
-    
 
 
     const Company_possibleTypes: string[] = ['Company']
@@ -125,7 +122,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isCompany"')
       return Company_possibleTypes.includes(obj.__typename)
     }
-    
 
 
     const Query_possibleTypes: string[] = ['Query']
@@ -133,7 +129,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isQuery"')
       return Query_possibleTypes.includes(obj.__typename)
     }
-    
 
 
     const Mutation_possibleTypes: string[] = ['Mutation']
@@ -141,7 +136,6 @@ export interface MutationGenqlSelection{
       if (!obj?.__typename) throw new Error('__typename is missing in "isMutation"')
       return Mutation_possibleTypes.includes(obj.__typename)
     }
-    
 
 export const enumCompanyStage = {
    LEAD: 'LEAD' as const,

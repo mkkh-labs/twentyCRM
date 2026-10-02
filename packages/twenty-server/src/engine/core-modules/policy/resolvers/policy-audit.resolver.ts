@@ -4,7 +4,7 @@ import { Args, Int, Query } from '@nestjs/graphql';
 import GraphQLJSON from 'graphql-type-json';
 import { PermissionFlagType } from 'twenty-shared/constants';
 
-import { CoreResolver } from 'src/engine/api/graphql/graphql-config/decorators/core-resolver.decorator';
+import { MetadataResolver } from 'src/engine/api/graphql/graphql-config/decorators/metadata-resolver.decorator';
 
 import { PolicyAuditService } from 'src/engine/core-modules/policy/services/policy-audit.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
@@ -14,7 +14,7 @@ import { RequireAccessTokenGuard } from 'src/engine/guards/require-access-token.
 import { UserAuthGuard } from 'src/engine/guards/user-auth.guard';
 import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 
-@CoreResolver()
+@MetadataResolver()
 @UseGuards(
   UserAuthGuard,
   WorkspaceAuthGuard,

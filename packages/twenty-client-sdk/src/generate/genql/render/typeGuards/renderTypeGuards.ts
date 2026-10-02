@@ -17,7 +17,7 @@ const renderTypeGuard = (target: string, possible: string[]) => {
       if (!obj?.__typename) throw new Error('__typename is missing in "is${target}"')
       return ${target}_possibleTypes.includes(obj.__typename)
     }
-    `
+    `.trimEnd()
 }
 
 export const renderTypeGuards = (schema: GraphQLSchema, ctx: RenderContext) => {

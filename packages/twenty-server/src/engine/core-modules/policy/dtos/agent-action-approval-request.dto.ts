@@ -1,6 +1,7 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
 import { UUIDScalarType } from 'src/engine/api/graphql/workspace-schema-builder/graphql-types/scalars';
+import { type AgentActionApprovalRequestStatus } from 'src/engine/core-modules/policy/entities/agent-action-approval-request.entity';
 
 @ObjectType('AgentActionApprovalRequest')
 export class AgentActionApprovalRequestDTO {
@@ -27,6 +28,9 @@ export class AgentActionApprovalRequestDTO {
 
   @Field()
   createdAt: Date;
+
+  @Field(() => String)
+  status: AgentActionApprovalRequestStatus;
 
   @Field(() => UUIDScalarType, { nullable: true })
   workflowRunId: string | null;

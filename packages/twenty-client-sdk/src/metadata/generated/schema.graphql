@@ -1843,6 +1843,7 @@ enum FeatureFlagKey {
   IS_WORKFLOW_DISPATCH_FROM_CORE_ENABLED
   IS_API_RATE_LIMIT_V2_ENABLED
   IS_MESSAGE_CALENDAR_TARGET_READ_ENABLED
+  IS_AGENT_WRITES_ENABLED
 }
 
 type WorkspaceUrls {
@@ -2720,6 +2721,31 @@ enum EmailingDomainStatus {
   TEMPORARY_FAILURE
 }
 
+type AgentActionApproval {
+  id: UUID!
+  action: String!
+  target: String!
+  riskClass: String!
+  actionDigest: String!
+  expiresAt: DateTime!
+}
+
+type AgentActionApprovalRequest {
+  id: UUID!
+  actorId: UUID!
+  action: String!
+  target: String!
+  riskClass: String!
+  actionDigest: String!
+  expiresAt: DateTime!
+  createdAt: DateTime!
+  status: String!
+  workflowRunId: UUID
+  workflowStepId: String
+  rootCorrelationId: UUID
+  originPolicyDecisionId: UUID
+}
+
 type MessageChannel {
   id: UUID!
   visibility: MessageChannelVisibility!
@@ -3451,6 +3477,11 @@ type Query {
   commandMenuItem(id: UUID!): CommandMenuItem
   frontComponents: [FrontComponent!]!
   frontComponent(id: UUID!): FrontComponent
+  pendingAgentActionApprovalRequests: [AgentActionApprovalRequest!]!
+  policyAuditEvents(limit: Int! = 50): JSON!
+  outboxOperations(limit: Int! = 50): JSON!
+  getRoles: [Role!]!
+  workflowOperations(limit: Int! = 50): JSON!
   currentWorkspace: Workspace!
   getPublicWorkspaceDataByDomain(origin: String): PublicWorkspaceData!
   getPublicWorkspaceDataById(id: UUID!): PublicWorkspaceDataSummary!
@@ -3482,7 +3513,6 @@ type Query {
   ): Field!
   getViewGroups(viewId: String): [ViewGroup!]!
   getViewGroup(id: String!): ViewGroup
-  getRoles: [Role!]!
   previewMessageCampaignAudience(input: PreviewMessageCampaignAudienceInput!): CampaignAudiencePreviewDTO!
   messageSuppressions(input: FindMessageSuppressionsInput!): MessageSuppressionList!
   unsubscribeTopics: [UnsubscribeTopic!]!
@@ -3527,6 +3557,9 @@ type Query {
   getUsageAnalytics(input: UsageAnalyticsInput): UsageAnalytics!
   findManyPublicDomains: [PublicDomain!]!
   currentUserApplicationAuthorizations: [ApplicationAuthorization!]!
+  metadataChangeSets(limit: Int! = 50): JSON!
+  configurationVersions(limit: Int! = 50): JSON!
+  configurationVersionDiff(fromVersionId: String!, toVersionId: String!): JSON!
 }
 
 input GetApiKeyInput {
@@ -3743,6 +3776,19 @@ type Mutation {
   createFrontComponent(input: CreateFrontComponentInput!): FrontComponent!
   updateFrontComponent(input: UpdateFrontComponentInput!): FrontComponent!
   deleteFrontComponent(id: UUID!): FrontComponent!
+  createAgentActionApproval(input: CreateAgentActionApprovalInput!): AgentActionApproval!
+  approveAgentActionRequest(input: ApproveAgentActionRequestInput!): AgentActionApproval!
+  denyAgentActionRequest(requestId: ID!): AgentActionApprovalRequest!
+  updateWorkspaceMemberRole(workspaceMemberId: UUID!, roleId: UUID!): WorkspaceMember!
+  createOneRole(createRoleInput: CreateRoleInput!): Role!
+  updateOneRole(updateRoleInput: UpdateRoleInput!): Role!
+  deleteOneRole(roleId: UUID!): String!
+  upsertObjectPermissions(upsertObjectPermissionsInput: UpsertObjectPermissionsInput!): [ObjectPermission!]!
+  upsertPermissionFlags(upsertPermissionFlagsInput: UpsertPermissionFlagsInput!): [RolePermissionFlag!]!
+  upsertFieldPermissions(upsertFieldPermissionsInput: UpsertFieldPermissionsInput!): [FieldPermission!]!
+  upsertRowLevelPermissionPredicates(input: UpsertRowLevelPermissionPredicatesInput!): UpsertRowLevelPermissionPredicatesResult!
+  assignRoleToAgent(agentId: UUID!, roleId: UUID!): Boolean!
+  removeRoleFromAgent(agentId: UUID!): Boolean!
   activateWorkspace(data: ActivateWorkspaceInput!): Workspace!
   updateWorkspace(data: UpdateWorkspaceInput!): Workspace!
   deleteCurrentWorkspace: Workspace!
@@ -3773,16 +3819,6 @@ type Mutation {
   updateManyViewGroups(inputs: [UpdateViewGroupInput!]!): [ViewGroup!]!
   deleteViewGroup(input: DeleteViewGroupInput!): ViewGroup!
   destroyViewGroup(input: DestroyViewGroupInput!): ViewGroup!
-  updateWorkspaceMemberRole(workspaceMemberId: UUID!, roleId: UUID!): WorkspaceMember!
-  createOneRole(createRoleInput: CreateRoleInput!): Role!
-  updateOneRole(updateRoleInput: UpdateRoleInput!): Role!
-  deleteOneRole(roleId: UUID!): String!
-  upsertObjectPermissions(upsertObjectPermissionsInput: UpsertObjectPermissionsInput!): [ObjectPermission!]!
-  upsertPermissionFlags(upsertPermissionFlagsInput: UpsertPermissionFlagsInput!): [RolePermissionFlag!]!
-  upsertFieldPermissions(upsertFieldPermissionsInput: UpsertFieldPermissionsInput!): [FieldPermission!]!
-  upsertRowLevelPermissionPredicates(input: UpsertRowLevelPermissionPredicatesInput!): UpsertRowLevelPermissionPredicatesResult!
-  assignRoleToAgent(agentId: UUID!, roleId: UUID!): Boolean!
-  removeRoleFromAgent(agentId: UUID!): Boolean!
   sendEmailViaEmailingDomain(input: SendEmailViaDomainInput!): SendEmailViaDomainOutput!
   sendMessageCampaign(input: SendMessageCampaignInput!): SendMessageCampaignOutputDTO!
   sendMessageCampaignTest(input: SendMessageCampaignTestInput!): SendEmailViaDomainOutput!
@@ -3881,6 +3917,15 @@ type Mutation {
   revokeApplicationAuthorization(applicationAuthorizationId: UUID!): Boolean!
   generateApplicationToken(applicationId: UUID!): ApplicationTokenPair!
   renewApplicationToken(applicationRefreshToken: String!): ApplicationTokenPair!
+  prepareMetadataDeletionChangeSet(input: PrepareMetadataDeletionChangeSetInput!): JSON!
+  createMetadataChangeSet(input: CreateMetadataChangeSetInput!): JSON!
+  planMetadataChangeSet(id: String!, expectedVersion: Int!): JSON!
+  acknowledgeMetadataChangeSetDependencies(id: String!, expectedVersion: Int!): JSON!
+  validateMetadataChangeSet(id: String!, expectedVersion: Int!): JSON!
+  approveMetadataChangeSet(id: String!, expectedVersion: Int!, applyToken: String!): Boolean!
+  applyMetadataChangeSet(id: String!, expectedVersion: Int!, applyToken: String!): JSON!
+  approveMetadataChangeSetRollback(id: String!, expectedVersion: Int!, from: String!): JSON!
+  rollbackMetadataChangeSet(id: String!, expectedVersion: Int!, from: String!, rollbackToken: String!, approvalId: String!): JSON!
 }
 
 input AddQuerySubscriptionInput {
@@ -4575,6 +4620,117 @@ input UpdateFrontComponentInputUpdates {
   description: String
 }
 
+input CreateAgentActionApprovalInput {
+  actorId: UUID!
+  executionKind: String!
+  objectNameSingular: String
+  databaseOperation: String
+  logicFunctionId: String
+  toolId: String
+  arguments: JSON!
+  expiresAt: String!
+}
+
+input ApproveAgentActionRequestInput {
+  requestId: UUID!
+  expiresAt: String!
+}
+
+input CreateRoleInput {
+  id: String
+  label: String!
+  description: String
+  icon: String
+  canUpdateAllSettings: Boolean
+  canAccessAllTools: Boolean
+  canReadAllObjectRecords: Boolean
+  canUpdateAllObjectRecords: Boolean
+  canSoftDeleteAllObjectRecords: Boolean
+  canDestroyAllObjectRecords: Boolean
+  canBeAssignedToUsers: Boolean
+  canBeAssignedToAgents: Boolean
+  canBeAssignedToApiKeys: Boolean
+}
+
+input UpdateRoleInput {
+  update: UpdateRolePayload!
+
+  """The id of the role to update"""
+  id: UUID!
+}
+
+input UpdateRolePayload {
+  label: String
+  description: String
+  icon: String
+  canUpdateAllSettings: Boolean
+  canAccessAllTools: Boolean
+  canReadAllObjectRecords: Boolean
+  canUpdateAllObjectRecords: Boolean
+  canSoftDeleteAllObjectRecords: Boolean
+  canDestroyAllObjectRecords: Boolean
+  canBeAssignedToUsers: Boolean
+  canBeAssignedToAgents: Boolean
+  canBeAssignedToApiKeys: Boolean
+}
+
+input UpsertObjectPermissionsInput {
+  roleId: UUID!
+  objectPermissions: [ObjectPermissionInput!]!
+}
+
+input ObjectPermissionInput {
+  objectMetadataId: UUID!
+  canReadObjectRecords: Boolean
+  canUpdateObjectRecords: Boolean
+  canSoftDeleteObjectRecords: Boolean
+  canDestroyObjectRecords: Boolean
+}
+
+input UpsertPermissionFlagsInput {
+  roleId: UUID!
+  permissionFlagKeys: [String!]!
+}
+
+input UpsertFieldPermissionsInput {
+  roleId: UUID!
+  fieldPermissions: [FieldPermissionInput!]!
+}
+
+input FieldPermissionInput {
+  objectMetadataId: UUID!
+  fieldMetadataId: UUID!
+  canReadFieldValue: Boolean
+  canUpdateFieldValue: Boolean
+}
+
+input UpsertRowLevelPermissionPredicatesInput {
+  roleId: UUID!
+  objectMetadataId: UUID!
+  predicates: [RowLevelPermissionPredicateInput!]!
+  predicateGroups: [RowLevelPermissionPredicateGroupInput!]!
+}
+
+input RowLevelPermissionPredicateInput {
+  id: UUID
+  fieldMetadataId: UUID!
+  operand: RowLevelPermissionPredicateOperand!
+  value: JSON
+  subFieldName: String
+  workspaceMemberFieldMetadataId: String
+  workspaceMemberSubFieldName: String
+  rowLevelPermissionPredicateGroupId: UUID
+  positionInRowLevelPermissionPredicateGroup: Float
+}
+
+input RowLevelPermissionPredicateGroupInput {
+  id: UUID
+  objectMetadataId: UUID!
+  parentRowLevelPermissionPredicateGroupId: UUID
+  logicalOperator: RowLevelPermissionPredicateGroupLogicalOperator!
+  positionInRowLevelPermissionPredicateGroup: Float
+}
+
 input ActivateWorkspaceInput {
   """
   Deprecated: the workspace name is set at creation (signUpInNewWorkspace) and this field is ignored during activation. Kept for backward compatibility.
@@ -4746,101 +4902,6 @@ input DeleteViewGroupInput {
 input DestroyViewGroupInput {
   """The id of the view group to destroy."""
   id: UUID!
-}
-
-input CreateRoleInput {
-  id: String
-  label: String!
-  description: String
-  icon: String
-  canUpdateAllSettings: Boolean
-  canAccessAllTools: Boolean
-  canReadAllObjectRecords: Boolean
-  canUpdateAllObjectRecords: Boolean
-  canSoftDeleteAllObjectRecords: Boolean
-  canDestroyAllObjectRecords: Boolean
-  canBeAssignedToUsers: Boolean
-  canBeAssignedToAgents: Boolean
-  canBeAssignedToApiKeys: Boolean
-}
-
-input UpdateRoleInput {
-  update: UpdateRolePayload!
-
-  """The id of the role to update"""
-  id: UUID!
-}
-
-input UpdateRolePayload {
-  label: String
-  description: String
-  icon: String
-  canUpdateAllSettings: Boolean
-  canAccessAllTools: Boolean
-  canReadAllObjectRecords: Boolean
-  canUpdateAllObjectRecords: Boolean
-  canSoftDeleteAllObjectRecords: Boolean
-  canDestroyAllObjectRecords: Boolean
-  canBeAssignedToUsers: Boolean
-  canBeAssignedToAgents: Boolean
-  canBeAssignedToApiKeys: Boolean
-}
-
-input UpsertObjectPermissionsInput {
-  roleId: UUID!
-  objectPermissions: [ObjectPermissionInput!]!
-}
-
-input ObjectPermissionInput {
-  objectMetadataId: UUID!
-  canReadObjectRecords: Boolean
-  canUpdateObjectRecords: Boolean
-  canSoftDeleteObjectRecords: Boolean
-  canDestroyObjectRecords: Boolean
-}
-
-input UpsertPermissionFlagsInput {
-  roleId: UUID!
-  permissionFlagKeys: [String!]!
-}
-
-input UpsertFieldPermissionsInput {
-  roleId: UUID!
-  fieldPermissions: [FieldPermissionInput!]!
-}
-
-input FieldPermissionInput {
-  objectMetadataId: UUID!
-  fieldMetadataId: UUID!
-  canReadFieldValue: Boolean
-  canUpdateFieldValue: Boolean
-}
-
-input UpsertRowLevelPermissionPredicatesInput {
-  roleId: UUID!
-  objectMetadataId: UUID!
-  predicates: [RowLevelPermissionPredicateInput!]!
-  predicateGroups: [RowLevelPermissionPredicateGroupInput!]!
-}
-
-input RowLevelPermissionPredicateInput {
-  id: UUID
-  fieldMetadataId: UUID!
-  operand: RowLevelPermissionPredicateOperand!
-  value: JSON
-  subFieldName: String
-  workspaceMemberFieldMetadataId: String
-  workspaceMemberSubFieldName: String
-  rowLevelPermissionPredicateGroupId: UUID
-  positionInRowLevelPermissionPredicateGroup: Float
-}
-
-input RowLevelPermissionPredicateGroupInput {
-  id: UUID
-  objectMetadataId: UUID!
-  parentRowLevelPermissionPredicateGroupId: UUID
-  logicalOperator: RowLevelPermissionPredicateGroupLogicalOperator!
-  positionInRowLevelPermissionPredicateGroup: Float
 }
 
 input SendEmailViaDomainInput {
@@ -5134,6 +5195,20 @@ input ApplicationFileUploadRequestInput {
   fileFolder: FileFolder!
   filePath: String!
   size: Int!
+}
+
+input PrepareMetadataDeletionChangeSetInput {
+  targetType: String!
+  targetId: String!
+}
+
+input CreateMetadataChangeSetInput {
+  baseMetadataVersion: Int!
+  applicationUniversalIdentifier: String!
+  migrationPlan: JSON!
+  rollbackPlan: JSON
+  recoveryStrategy: String
+  dependencyResolutionDigest: String
 }
 
 type Subscription {
