@@ -1,6 +1,6 @@
 ---
 title: Twenty CRM Ideal CRM Implementation Specification
-version: 1.2.18
+version: 1.2.19
 status: conditional
 created_date: 2026-09-01
 tags: [ideal-crm, security, workflows, policy, reliability]
@@ -59,16 +59,16 @@ enabling protected agent writes or automated side effects in production.
 
 ## Workflow ingress contract
 
-Database-event trigger jobs persist a schema-versioned, expiring, tenant-bound,
-digest-protected event reference. The digest detects accidental inconsistency;
-it is not authenticated provenance because a producer that can rewrite the
-envelope can recompute it. Jobs do not persist hydrated before/after records.
-The worker validates structural bindings, resolves current application
-authority, and re-fetches the current record through scoped ORM permissions.
-Authenticated producer provenance, current trigger-configuration binding, and
-an equivalent strict `RunWorkflowJob` envelope remain `BLOCK_RELEASE` work.
-Delete/destroy event triggers remain denied until a separately approved minimal
-tombstone contract exists.
+Database-event trigger jobs persist a schema-versioned, expiring, tenant-bound
+event reference with HMAC-authenticated producer provenance. Jobs do not persist
+hydrated before/after records. The worker validates the signed workspace,
+workflow, version, trigger, event, and correlation bindings; re-resolves current
+application authority and trigger configuration; and re-fetches the current
+record through scoped ORM permissions. `RunWorkflowJob` separately enforces an
+exact-key, schema-versioned UUID envelope before workspace execution. Focused
+tamper, expiry, replay, stale-binding, malformed, legacy, and cross-workspace
+negative coverage passes locally. Delete/destroy event triggers remain denied
+until a separately approved minimal tombstone contract exists.
 
 ## Release gates
 

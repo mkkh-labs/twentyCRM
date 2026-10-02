@@ -1,6 +1,6 @@
 ---
 title: DeepSeek Twenty CRM Ideal CRM Audit Review
-version: 1.6.4
+version: 1.6.5
 status: BLOCK_RELEASE
 created_date: 2026-09-04
 tags: [ideal-crm, audit, deepseek, release-gate, evidence]
@@ -26,15 +26,15 @@ denominator, staffing model, or claim-level evidence ledger is supplied.
 
 ## Pinned repository state
 
-| Evidence          | Verified state                                                                                                                    |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Worktree          | `codex/ideal-crm-guide-task-1` at baseline `adc2839d26660cf452995e9308c7237653dafd27` plus the uncommitted implementation overlay |
-| Overlay footprint | 239 modified tracked files and 286 untracked files; staged diff empty                                                             |
-| Mergeability      | The implementation is an uncommitted overlay on the baseline, not a reviewable commit or merge candidate                          |
-| Runtime baseline  | Node 24.16.0; Yarn 4 workspace; PostgreSQL, Redis, and ClickHouse disposable test dependencies available                          |
-| Mutation posture  | No staging, commit, push, deployment, production database action, or release action was performed                                 |
-| Local gate        | `CONDITIONAL GO` for code review only                                                                                             |
-| Production gate   | `NO-GO / BLOCK_RELEASE` pending G8, deployed M9, target M10, hosted CI, canary, rollback, and Go/No-Go evidence                   |
+| Evidence          | Verified state                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Worktree          | `codex/ideal-crm-closeout`, based on `codex/ideal-crm-guide-task-1@831b9f45992e613bd857fc3c9b5e6293ba1c4753`                   |
+| Overlay footprint | Atomic closeout commits preserve implementation, tests, schema alignment, upgrade reachability, and evidence updates           |
+| Mergeability      | Reviewable commit sequence; remote Draft PR validation remains required before any merge decision                              |
+| Runtime baseline  | Node 24.16.0; Yarn 4 workspace; PostgreSQL, Redis, and ClickHouse disposable test dependencies available                       |
+| Mutation posture  | Local commits and the authorized review-branch push are permitted; merge, deployment, production mutation, and release are not |
+| Local gate        | `CONDITIONAL GO` for code review only                                                                                          |
+| Production gate   | `NO-GO / BLOCK_RELEASE` pending G8, deployed M9, target M10, hosted CI, canary, rollback, and Go/No-Go evidence                |
 
 ## Claim-by-claim review
 
@@ -86,7 +86,7 @@ scores, duration, and completion percentages are discarded.
 | Complete server integration inventory | Four disposable-reset shards: 605 suites passed, 2 skipped; 3,238 tests passed, 26 skipped; 859 snapshots passed; every final shard exit 0                                                               | Local integration gate passes without suppressing failures                                                                                                                                                          |
 | Integration reset diagnostic          | One shard initially failed because the reset omitted `NODE_ENV=test`, suppressing the test-only verified-2FA seed; the exact test passed after a correctly seeded reset and the entire shard then passed | Harness invocation defect identified without weakening the 2FA control or changing source                                                                                                                           |
 | Monolithic integration harness        | Prior aggregate execution reached V8 heap exhaustion near 8 GB                                                                                                                                           | Hosted CI resource/shard configuration remains `PROVE_NOW`; complete sharded inventory is green                                                                                                                     |
-| Server units                          | 1,100 suites and 7,457 tests passed; 4 suites and 15 tests skipped; 116 snapshots passed; exit 0                                                                                                         | Full server unit gate passes; worker teardown warning remains `PROVE_NOW`                                                                                                                                           |
+| Server units                          | 1,106 suites and 7,499 tests passed; 4 suites and 15 tests skipped; 116 snapshots passed; exit 0                                                                                                         | Full uncached Node 24.16.0 server unit gate passes; worker teardown warning remains `PROVE_NOW`                                                                                                                     |
 | Frontend units                        | Four direct Jest shards: 1,160 suites, 6,873 tests, and 133 snapshots passed; every shard exit 0                                                                                                         | Full frontend inventory passes; monolithic runs selected different suites for process-level `SIGSEGV`, so CI isolation remains `PROVE_NOW`                                                                          |
 | Direct server typecheck               | `npx tsgo -p tsconfig.json --noEmit`; exit 0                                                                                                                                                             | Server type contract passes without relying on Nx cache                                                                                                                                                             |
 | Fresh builds                          | `twenty-shared`, `twenty-server`, and `twenty-front` passed; server compiled 8,149 files and frontend transformed 27,122 modules                                                                         | Compile/bundle gates pass; Nx still labels `twenty-ui:build` flaky                                                                                                                                                  |
