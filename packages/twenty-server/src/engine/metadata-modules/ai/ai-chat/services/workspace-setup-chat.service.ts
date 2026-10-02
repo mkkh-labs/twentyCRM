@@ -23,8 +23,7 @@ import { buildWorkspaceSetupChatThreadId } from 'src/engine/metadata-modules/ai/
 import { buildWorkspaceSetupKickoffMessageText } from 'src/engine/metadata-modules/ai/ai-chat/utils/build-workspace-setup-kickoff-message-text.util';
 import { tagAiChatStreamScope } from 'src/engine/metadata-modules/ai/ai-chat/utils/tag-ai-chat-stream-scope.util';
 import { AiModelRegistryService } from 'src/engine/metadata-modules/ai/ai-models/services/ai-model-registry.service';
-import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 
 const WORKSPACE_SETUP_CHAT_THREAD_TITLE = msg`Workspace setup`;
 
@@ -41,6 +40,7 @@ type StartWorkspaceSetupChatServiceResult =
     };
 
 @Injectable()
+// WorkspaceCacheService remains tenant-bound through the explicit workspaceId key.
 // oxlint-disable-next-line twenty/inject-workspace-repository
 export class WorkspaceSetupChatService {
   private readonly logger = new Logger(WorkspaceSetupChatService.name);
@@ -53,7 +53,7 @@ export class WorkspaceSetupChatService {
     private readonly i18nService: I18nService,
     private readonly agentChatService: AgentChatService,
     private readonly agentChatStreamingService: AgentChatStreamingService,
-    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    private readonly workspaceCacheService: WorkspaceCacheService,
   ) {}
 
   async startWorkspaceSetupChat({
@@ -267,15 +267,22 @@ export class WorkspaceSetupChatService {
     workspaceId: string;
   }): Promise<string | null> {
     try {
-      const workspaceMember =
-        await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-          const workspaceMemberRepository =
-            this.workspaceOrmManager.getRepository('workspaceMember', {
-              shouldBypassPermissionChecks: true,
-            });
+      const { flatWorkspaceMemberMaps } =
+        await this.workspaceCacheService.getOrRecompute(workspaceId, [
+          'flatWorkspaceMemberMaps',
+        ]);
+      const workspaceMemberId = flatWorkspaceMemberMaps.idByUserId[userId];
+      const workspaceMember = isDefined(workspaceMemberId)
+        ? flatWorkspaceMemberMaps.byId[workspaceMemberId]
+        : undefined;
 
-          return workspaceMemberRepository.findOne({ where: { userId } });
-        }, buildSystemAuthContext(workspaceId));
+      if (
+        !isDefined(workspaceMember) ||
+        workspaceMember.userId !== userId ||
+        isDefined(workspaceMember.deletedAt)
+      ) {
+        return null;
+      }
 
       return workspaceMember?.locale ?? null;
     } catch (error) {

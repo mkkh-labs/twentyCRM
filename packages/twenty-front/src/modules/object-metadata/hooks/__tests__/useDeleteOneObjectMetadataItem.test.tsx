@@ -2,12 +2,6 @@ import { act, renderHook } from '@testing-library/react';
 
 import { useDeleteOneObjectMetadataItem } from '@/object-metadata/hooks/useDeleteOneObjectMetadataItem';
 
-import {
-  query,
-  responseData,
-  variables,
-} from '@/object-metadata/hooks/__mocks__/useDeleteOneObjectMetadataItem';
-
 import { jestExpectSuccessfulMetadataRequestResult } from '@/object-metadata/hooks/__tests__/utils/jest-expect-metadata-request-status.util';
 import { GET_CURRENT_USER } from '@/users/graphql/queries/getCurrentUser';
 import { FIND_ALL_VIEWS } from '@/views/graphql/queries/findAllViews';
@@ -20,18 +14,33 @@ import {
   responseData as findManyObjectMetadataItemsResponseData,
 } from '@/object-metadata/hooks/__mocks__/useFindManyObjectMetadataItems';
 
-const mocks = [
-  {
-    request: {
-      query,
-      variables,
-    },
-    result: jest.fn(() => ({
-      data: {
-        deleteOneObject: responseData,
-      },
-    })),
+const preparedDeletion = {
+  id: '22222222-2222-4222-8222-222222222222',
+  version: 2,
+  dependencyImpact: {
+    workflows: [],
+    views: [],
+    applications: [],
+    contracts: [],
+    metadata: [],
   },
+  dependencyCount: 0,
+};
+const mockPrepareMetadataDeletion = jest
+  .fn()
+  .mockResolvedValue(preparedDeletion);
+const mockApplyPreparedMetadataDeletion = jest
+  .fn()
+  .mockResolvedValue({ status: 'SUCCEEDED' });
+
+jest.mock('@/object-metadata/hooks/useMetadataDeletionChangeSet', () => ({
+  useMetadataDeletionChangeSet: () => ({
+    prepareMetadataDeletion: mockPrepareMetadataDeletion,
+    applyPreparedMetadataDeletion: mockApplyPreparedMetadataDeletion,
+  }),
+}));
+
+const mocks = [
   {
     request: {
       query: GET_CURRENT_USER,
@@ -87,11 +96,26 @@ describe('useDeleteOneObjectMetadataItem', () => {
     });
 
     await act(async () => {
-      const res =
-        await result.current.deleteOneObjectMetadataItem('idToDelete');
+      const preparation =
+        await result.current.prepareDeleteOneObjectMetadataItem('idToDelete');
+
+      jestExpectSuccessfulMetadataRequestResult(preparation);
+      const res = await result.current.deleteOneObjectMetadataItem(
+        'idToDelete',
+        preparation.response,
+      );
 
       jestExpectSuccessfulMetadataRequestResult(res);
-      expect(res.response).toEqual({ data: { deleteOneObject: responseData } });
+      expect(res.response).toEqual({ status: 'SUCCEEDED' });
     });
+
+    expect(mockPrepareMetadataDeletion).toHaveBeenCalledWith({
+      targetType: 'OBJECT',
+      targetId: 'idToDelete',
+    });
+    expect(mockApplyPreparedMetadataDeletion).toHaveBeenCalledWith(
+      preparedDeletion,
+      { acknowledgeDependencies: true },
+    );
   });
 });

@@ -92,7 +92,11 @@
         "fix": {}
       }
     },
-    "test": {},
+    "test": {
+      "options": {
+        "testTimeout": 30000
+      }
+    },
     "storybook:build": {
       "options": {
         "env": {

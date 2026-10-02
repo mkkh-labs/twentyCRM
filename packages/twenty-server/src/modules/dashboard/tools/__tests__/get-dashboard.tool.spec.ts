@@ -14,6 +14,9 @@ const OWNER_FIELD_ID = '20202020-cccc-4d02-bf25-6aeccf7ea419';
 const PERSON_OBJECT_ID = '20202020-dddd-4d02-bf25-6aeccf7ea419';
 const PERSON_ADDRESS_FIELD_ID = '20202020-eeee-4d02-bf25-6aeccf7ea419';
 
+const rolePermissionConfig = { unionOf: ['role-id'] };
+const authContext = { workspace: { id: WORKSPACE_ID } };
+
 const flatFieldMetadataMaps = {
   byUniversalIdentifier: {
     'field-amount': {
@@ -122,9 +125,21 @@ describe('get_dashboard tool', () => {
       workspaceOrmManager: {
         executeInWorkspaceContext: jest
           .fn()
-          .mockImplementation(async (fn) => fn()),
-        getRepository: jest.fn().mockReturnValue({
-          findOne: jest.fn().mockResolvedValue(dashboard),
+          .mockImplementation(async (fn, suppliedAuthContext) => {
+            if (suppliedAuthContext !== authContext) {
+              throw new Error('Dashboard read used the wrong auth context');
+            }
+
+            return fn();
+          }),
+        getRepository: jest.fn().mockImplementation((_name, permissions) => {
+          if (permissions !== rolePermissionConfig) {
+            throw new Error('Dashboard read bypassed role permissions');
+          }
+
+          return {
+            findOne: jest.fn().mockResolvedValue(dashboard),
+          };
         }),
       },
       flatEntityMapsCacheService: {
@@ -143,7 +158,9 @@ describe('get_dashboard tool', () => {
       >,
       {
         workspaceId: WORKSPACE_ID,
-      },
+        authContext,
+        rolePermissionConfig,
+      } as never,
     );
 
     const result = await tool.execute({ dashboardId: dashboard.id });

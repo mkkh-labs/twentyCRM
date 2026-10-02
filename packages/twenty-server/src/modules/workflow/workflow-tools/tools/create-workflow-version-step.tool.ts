@@ -146,6 +146,8 @@ export const createCreateWorkflowVersionStepTool = (
       await deps.workflowVersionService.autoLayoutWorkflowVersion({
         workflowVersionId: parameters.workflowVersionId,
         workspaceId: context.workspaceId,
+        authContext: context.authContext,
+        rolePermissionConfig: context.rolePermissionConfig,
       });
 
       return enrichResultWithNextStep({

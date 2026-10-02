@@ -1,17 +1,14 @@
 import { z } from 'zod';
 
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { type WorkflowWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 import { isDefined } from 'twenty-shared/utils';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 
-type DeleteWorkflowToolContext = WorkflowToolContext & {
-  rolePermissionConfig: RolePermissionConfig;
-};
+type DeleteWorkflowToolContext = WorkflowToolAuthorizedContext;
 
 const deleteWorkflowSchema = z.object({
   workflowId: z.string().uuid().describe('The UUID of the workflow to delete'),
@@ -35,7 +32,7 @@ export const createDeleteWorkflowTool = (
       const { workflowId } = parameters;
       const { workspaceId } = context;
 
-      const authContext = buildSystemAuthContext(workspaceId);
+      const authContext = getWorkflowToolAuthContext(context);
 
       const deleteResult =
         await deps.workspaceOrmManager.executeInWorkspaceContext(async () => {

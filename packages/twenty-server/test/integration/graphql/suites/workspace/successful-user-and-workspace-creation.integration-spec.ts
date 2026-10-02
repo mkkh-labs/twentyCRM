@@ -18,6 +18,11 @@ import { WorkspaceActivationStatus } from 'twenty-shared/workspace';
 import { OnboardingStatus } from 'src/engine/core-modules/onboarding/enums/onboarding-status.enum';
 import { TWENTY_STANDARD_APPLICATION } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-applications';
 
+const EXPECTED_WORKSPACE_ACTIVATION_STATUS =
+  process.env.IS_BILLING_ENABLED === 'true'
+    ? WorkspaceActivationStatus.CREATED
+    : WorkspaceActivationStatus.ACTIVE;
+
 describe('Successful user and workspace creation', () => {
   let createdUserAccessToken: string | undefined;
 
@@ -79,7 +84,7 @@ describe('Successful user and workspace creation', () => {
     });
 
     expect(activateWorkspaceData.activationStatus).toBe(
-      WorkspaceActivationStatus.ACTIVE,
+      EXPECTED_WORKSPACE_ACTIVATION_STATUS,
     );
 
     const {
@@ -215,7 +220,7 @@ describe('Successful user and workspace creation', () => {
     });
 
     expect(activateWorkspaceData.activationStatus).toBe(
-      WorkspaceActivationStatus.ACTIVE,
+      EXPECTED_WORKSPACE_ACTIVATION_STATUS,
     );
   });
 
@@ -330,7 +335,7 @@ describe('Successful user and workspace creation', () => {
     });
 
     expect(secondActivation.activationStatus).toBe(
-      WorkspaceActivationStatus.ACTIVE,
+      EXPECTED_WORKSPACE_ACTIVATION_STATUS,
     );
   });
 

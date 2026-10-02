@@ -5,6 +5,7 @@ import { type DataSource } from 'typeorm';
 
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { CommandLogger } from 'src/database/commands/logger';
+import { withDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
 
 export type WorkspaceCommandOptions = {
   workspaceId?: Set<string>;
@@ -121,13 +122,21 @@ export abstract class WorkspaceCommandRunner<
         workspaceCountLimit: options.workspaceCountLimit,
         dryRun: options.dryRun,
         callback: async (context) => {
-          await this.runOnWorkspace({
-            options,
-            workspaceId: context.workspaceId,
-            dataSource: context.dataSource,
-            index: context.index,
-            total: context.total,
-          });
+          await withDestructiveMetadataChangeExecutionContext(
+            {
+              source: 'SYSTEM_BUILD',
+              workspaceId: context.workspaceId,
+              operationId: this.constructor.name,
+            },
+            () =>
+              this.runOnWorkspace({
+                options,
+                workspaceId: context.workspaceId,
+                dataSource: context.dataSource,
+                index: context.index,
+                total: context.total,
+              }),
+          );
         },
       });
 
@@ -139,6 +148,12 @@ export abstract class WorkspaceCommandRunner<
         );
 
         return;
+      }
+
+      if (report.fail.length > 0) {
+        throw new Error(
+          `${report.fail.length} workspace command execution(s) failed.`,
+        );
       }
 
       this.logger.log(chalk.blue('Command completed!'));

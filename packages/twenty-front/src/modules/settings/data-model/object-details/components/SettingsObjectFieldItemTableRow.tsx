@@ -1,4 +1,3 @@
-import { useDeleteOneFieldMetadataItem } from '@/object-metadata/hooks/useDeleteOneFieldMetadataItem';
 import { useFieldMetadataItem } from '@/object-metadata/hooks/useFieldMetadataItem';
 import { useGetIsMetadataItemCustom } from '@/object-metadata/hooks/useGetIsMetadataItemCustom';
 import { useGetRelationMetadata } from '@/object-metadata/hooks/useGetRelationMetadata';
@@ -126,8 +125,6 @@ export const SettingsObjectFieldItemTableRow = ({
     });
 
   const { activateMetadataField } = useFieldMetadataItem();
-
-  const { deleteOneFieldMetadataItem } = useDeleteOneFieldMetadataItem();
 
   const setSettingsObjectFields = useSetAtomFamilyState(
     settingsObjectFieldsFamilyState,
@@ -268,15 +265,12 @@ export const SettingsObjectFieldItemTableRow = ({
             isSystemField={fieldMetadataItem.isSystem === true}
             readonly={readonly}
             fieldMetadataItemId={fieldMetadataItem.id}
+            deleteActionText={t`Review deletion`}
             onEdit={navigateToFieldEdit}
             onActivate={() =>
               activateMetadataField(fieldMetadataItem.id, objectMetadataItem.id)
             }
-            onDelete={() =>
-              deleteOneFieldMetadataItem({
-                idToDelete: fieldMetadataItem.id,
-              })
-            }
+            onDelete={navigateToFieldEdit}
           />
         ) : (
           <LightIconButton

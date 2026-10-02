@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { EmailComposerService } from 'src/engine/core-modules/tool/tools/email-tool/email-composer.service';
 import { EmailToolInputZodSchema } from 'src/engine/core-modules/tool/tools/email-tool/email-tool.schema';
@@ -17,6 +18,7 @@ export class SendEmailTool implements Tool {
   description =
     'Send an email using a connected account. Requires SEND_EMAIL_TOOL permission.';
   inputSchema = EmailToolInputZodSchema;
+  flag = PermissionFlagType.SEND_EMAIL_TOOL;
 
   constructor(
     private readonly emailComposerService: EmailComposerService,

@@ -1,13 +1,21 @@
 import gql from 'graphql-tag';
 import { updateWorkflowVersionTrigger } from 'test/integration/graphql/suites/workflow/utils/update-workflow-version-trigger.util';
-import { isDefined } from 'twenty-shared/utils';
 import {
   destroyWorkflowRun,
+  getWorkflowRun,
   runWorkflowVersion,
   waitForWorkflowCompletion,
   type WorkflowRunStatusType,
 } from 'test/integration/graphql/suites/workflow/utils/workflow-run-test.util';
 import { makeGraphqlAPIRequest } from 'test/integration/graphql/utils/make-graphql-api-request.util';
+import { makeMetadataAPIRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
+import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
+import { getAppProviderByClassName } from 'test/integration/utils/get-app-provider-by-class-name.util';
+import { FeatureFlagKey } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
+
+import { OutboxEventConsumerService } from 'src/engine/core-modules/transactional-outbox/services/outbox-event-consumer.service';
+import { SEED_APPLE_WORKSPACE_ID } from 'src/engine/workspace-manager/dev-seeder/core/constants/seeder-workspaces.constant';
 
 type WorkflowActionStepType =
   | 'SEND_EMAIL'
@@ -178,6 +186,108 @@ const updateWorkflowVersionStepInput = async ({
   expect(response.body.errors).toBeUndefined();
 };
 
+const approveWorkflowAction = async (workflowRunId: string): Promise<void> => {
+  const pendingResponse = await makeMetadataAPIRequest({
+    query: gql`
+      query PendingAgentActionApprovalRequests {
+        pendingAgentActionApprovalRequests {
+          id
+          workflowRunId
+        }
+      }
+    `,
+  });
+
+  expect(pendingResponse.body.errors).toBeUndefined();
+
+  const approvalRequest =
+    pendingResponse.body.data.pendingAgentActionApprovalRequests.find(
+      (candidate: { workflowRunId: string }) =>
+        candidate.workflowRunId === workflowRunId,
+    );
+
+  expect(approvalRequest).toBeDefined();
+
+  const approveResponse = await makeMetadataAPIRequest({
+    query: gql`
+      mutation ApproveAgentActionRequest(
+        $input: ApproveAgentActionRequestInput!
+      ) {
+        approveAgentActionRequest(input: $input) {
+          id
+        }
+      }
+    `,
+    variables: {
+      input: {
+        requestId: approvalRequest.id,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      },
+    },
+  });
+
+  expect(approveResponse.body.errors).toBeUndefined();
+
+  const [approvalEvent] = await global.testDataSource.query(
+    `SELECT id FROM core."outboxEvent"
+     WHERE "eventType" = 'agent.action.approved'
+       AND "aggregateId" = $1
+     ORDER BY "createdAt" DESC
+     LIMIT 1`,
+    [approvalRequest.id],
+  );
+
+  expect(approvalEvent).toBeDefined();
+
+  const [publishedEvents] = await global.testDataSource.query(
+    `UPDATE core."outboxEvent"
+     SET state = 'PUBLISHED',
+         "attemptCount" = "attemptCount" + 1,
+         "publishedAt" = NOW()
+     WHERE id = $1
+       AND "workspaceId" = $2
+       AND state = 'PENDING'
+     RETURNING id`,
+    [approvalEvent.id, SEED_APPLE_WORKSPACE_ID],
+  );
+
+  expect(publishedEvents).toHaveLength(1);
+
+  const consumeResult =
+    await getAppProviderByClassName<OutboxEventConsumerService>(
+      'OutboxEventConsumerService',
+    ).consume({
+      outboxEventId: approvalEvent.id,
+      workspaceId: SEED_APPLE_WORKSPACE_ID,
+    });
+
+  expect(consumeResult.status).not.toBe('RECONCILIATION_REQUIRED');
+};
+
+const waitForApprovalContinuation = async ({
+  workflowRunId,
+  stepId,
+}: {
+  workflowRunId: string;
+  stepId: string;
+}): Promise<void> => {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const workflowRun = await getWorkflowRun(workflowRunId);
+    const stepError = workflowRun?.state.stepInfos?.[stepId]?.error;
+
+    if (
+      workflowRun?.status !== 'FAILED' ||
+      !stepError?.includes('APPROVAL_REQUIRED')
+    ) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error('Workflow approval continuation was not scheduled.');
+};
+
 export const runWorkflowActionStep = async ({
   name,
   stepType,
@@ -189,11 +299,17 @@ export const runWorkflowActionStep = async ({
   input: Record<string, unknown>;
   payload?: object;
 }): Promise<WorkflowActionStepRun> => {
-  const workflowId = await createWorkflow(name);
-
+  let workflowId: string | undefined;
   let workflowRunId: string | undefined;
 
   try {
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: true,
+      expectToFail: false,
+    });
+
+    workflowId = await createWorkflow(name);
     const workflowVersionId = await findDraftWorkflowVersionId(workflowId);
 
     await updateWorkflowVersionTrigger({
@@ -215,8 +331,18 @@ export const runWorkflowActionStep = async ({
 
     workflowRunId = await runWorkflowVersion({ workflowVersionId, payload });
 
-    const workflowRun = await waitForWorkflowCompletion(workflowRunId);
-    const stepInfo = workflowRun?.state?.stepInfos?.[step.id];
+    let workflowRun = await waitForWorkflowCompletion(workflowRunId);
+    let stepInfo = workflowRun?.state?.stepInfos?.[step.id];
+
+    if (stepInfo?.error?.includes('APPROVAL_REQUIRED')) {
+      await approveWorkflowAction(workflowRunId);
+      await waitForApprovalContinuation({
+        workflowRunId,
+        stepId: step.id,
+      });
+      workflowRun = await waitForWorkflowCompletion(workflowRunId);
+      stepInfo = workflowRun?.state?.stepInfos?.[step.id];
+    }
 
     return {
       status: workflowRun?.status,
@@ -229,6 +355,14 @@ export const runWorkflowActionStep = async ({
       await destroyWorkflowRun(workflowRunId);
     }
 
-    await destroyWorkflow(workflowId);
+    if (isDefined(workflowId)) {
+      await destroyWorkflow(workflowId);
+    }
+
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: false,
+      expectToFail: false,
+    });
   }
 };

@@ -2,20 +2,17 @@ import { isDefined } from 'twenty-shared/utils';
 import { type FindOptionsWhere } from 'typeorm';
 import { z } from 'zod';
 
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 import {
   WorkflowRunStatus,
   type WorkflowRunWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 
-type ListWorkflowRunsToolContext = WorkflowToolContext & {
-  rolePermissionConfig: RolePermissionConfig;
-};
+type ListWorkflowRunsToolContext = WorkflowToolAuthorizedContext;
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -52,7 +49,7 @@ export const createListWorkflowRunsTool = (
   inputSchema: listWorkflowRunsSchema,
   execute: async (parameters: ListWorkflowRunsInput) => {
     try {
-      const authContext = buildSystemAuthContext(context.workspaceId);
+      const authContext = getWorkflowToolAuthContext(context);
 
       return await deps.workspaceOrmManager.executeInWorkspaceContext(
         async () => {

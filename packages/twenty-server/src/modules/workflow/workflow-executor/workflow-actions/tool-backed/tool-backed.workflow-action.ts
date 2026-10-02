@@ -1,13 +1,24 @@
 import { Logger } from '@nestjs/common';
 
-import { resolveInput as resolveWorkflowInput } from 'twenty-shared/utils';
 import { type WorkflowRunStepLog } from 'twenty-shared/workflow';
+import { ToolCategory } from 'twenty-shared/ai';
+import {
+  isDefined,
+  resolveInput as resolveWorkflowInput,
+} from 'twenty-shared/utils';
 
 import { type ToolInput } from 'src/engine/core-modules/tool/types/tool-input.type';
+import { type ToolExecutionContext } from 'src/engine/core-modules/tool/types/tool-execution-context.type';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { type Tool } from 'src/engine/core-modules/tool/types/tool.type';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import { type WorkflowAction as WorkflowActionContract } from 'src/modules/workflow/workflow-executor/interfaces/workflow-action.interface';
-import { type WorkflowActionInput } from 'src/modules/workflow/workflow-executor/types/workflow-action-input';
+import {
+  type WorkflowActionInput,
+  type WorkflowRunInfo,
+} from 'src/modules/workflow/workflow-executor/types/workflow-action-input';
 import { type WorkflowActionOutput } from 'src/modules/workflow/workflow-executor/types/workflow-action-output.type';
 import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/find-step-or-throw.util';
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action.type';
@@ -25,10 +36,14 @@ export abstract class ToolBackedWorkflowAction<
   protected readonly logger: Logger;
 
   protected constructor(
-    loggerName: string,
+    private readonly providerClass: string,
+    private readonly toolId: string,
     private readonly workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
+    private readonly workflowToolEffectService: WorkflowToolEffectService,
+    protected readonly workflowExecutionContextService: WorkflowExecutionContextService,
+    private readonly permissionsService: PermissionsService,
   ) {
-    this.logger = new Logger(loggerName);
+    this.logger = new Logger(providerClass);
   }
 
   protected abstract getTool(): Tool;
@@ -44,7 +59,7 @@ export abstract class ToolBackedWorkflowAction<
 
   protected async postprocessInput(
     resolvedInput: TInput,
-    _workspaceId: string,
+    _runInfo: WorkflowRunInfo,
   ): Promise<TInput> {
     return resolvedInput;
   }
@@ -60,6 +75,12 @@ export abstract class ToolBackedWorkflowAction<
     args: BuildStepLogArgs<TInput>,
   ): WorkflowRunStepLog;
 
+  protected async buildToolExecutionContext(
+    runInfo: WorkflowRunInfo,
+  ): Promise<ToolExecutionContext> {
+    return { workspaceId: runInfo.workspaceId };
+  }
+
   async execute({
     currentStepId,
     steps,
@@ -74,12 +95,55 @@ export abstract class ToolBackedWorkflowAction<
     const preprocessed = await this.preprocessInput(rawInput, context);
     const resolvedInput = await this.postprocessInput(
       this.resolveInput(preprocessed, context),
-      runInfo.workspaceId,
+      runInfo,
     );
 
     const startedAt = Date.now();
-    const toolOutput = await this.getTool().execute(resolvedInput, {
+    const executionContext =
+      await this.workflowExecutionContextService.getExecutionContext(runInfo);
+    const tool = this.getTool();
+    const roleAllowed = isDefined(tool.flag)
+      ? await this.permissionsService.hasToolPermission(
+          executionContext.rolePermissionConfig,
+          runInfo.workspaceId,
+          tool.flag,
+        )
+      : false;
+    const toolExecutionContext = await this.buildToolExecutionContext(runInfo);
+    const toolOutput = await this.workflowToolEffectService.execute({
       workspaceId: runInfo.workspaceId,
+      workflowRunId: runInfo.workflowRunId,
+      stepId: currentStepId,
+      providerClass: this.providerClass,
+      actionInput: resolvedInput,
+      descriptor: {
+        name: this.toolId,
+        label: this.providerClass,
+        description: tool.description,
+        category: ToolCategory.ACTION,
+        executionRef: { kind: 'static', toolId: this.toolId },
+      },
+      policyContext: {
+        workspaceId: runInfo.workspaceId,
+        roleId: executionContext.roleId,
+        rolePermissionConfig: executionContext.rolePermissionConfig,
+        authContext: executionContext.authContext,
+        actorContext: executionContext.initiator,
+        ...(executionContext.authContext.type === 'user'
+          ? {
+              userId: executionContext.authContext.user.id,
+              userWorkspaceId: executionContext.authContext.userWorkspaceId,
+            }
+          : {}),
+        rootCorrelationId: runInfo.rootCorrelationId ?? runInfo.workflowRunId,
+        jobId: runInfo.jobId,
+        workflowRunId: runInfo.workflowRunId,
+        workflowStepId: currentStepId,
+        approvalId: runInfo.approvalId,
+        automationAllowed: true,
+      },
+      roleAllowed,
+      execute: () => tool.execute(resolvedInput, toolExecutionContext),
     });
     const durationMs = Date.now() - startedAt;
 

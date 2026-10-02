@@ -171,22 +171,32 @@ export class BillingSubscriptionUpdateService {
     });
   }
 
-  async changeSeats(workspaceId: string, newSeats: number) {
+  async changeSeats(
+    workspaceId: string,
+    newSeats: number,
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>,
+  ) {
     const billingSubscription =
       await this.billingSubscriptionService.getCurrentBillingSubscriptionOrThrow(
         { workspaceId },
       );
 
-    await this.updateSubscription(workspaceId, billingSubscription.id, {
-      type: SubscriptionUpdateType.SEATS,
-      newSeats,
-    });
+    await this.updateSubscription(
+      workspaceId,
+      billingSubscription.id,
+      {
+        type: SubscriptionUpdateType.SEATS,
+        newSeats,
+      },
+      requestOptions,
+    );
   }
 
   async updateSubscription(
     workspaceId: string,
     subscriptionId: string,
     subscriptionUpdate: SubscriptionUpdate,
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>,
   ): Promise<void> {
     const subscription = await this.billingSubscriptionRepository.findOneOrFail(
       workspaceId,
@@ -241,6 +251,10 @@ export class BillingSubscriptionUpdateService {
           subscriptionCurrentPeriodEnd: Math.floor(
             subscription.currentPeriodEnd.getTime() / 1000,
           ),
+          requestOptions: this.buildFollowUpRequestOptions(
+            requestOptions,
+            'schedule',
+          ),
         });
       } else {
         assertIsDefinedOrThrow(nextPhase);
@@ -264,6 +278,10 @@ export class BillingSubscriptionUpdateService {
             ),
           subscriptionCurrentPeriodEnd: Math.floor(
             subscription.currentPeriodEnd.getTime() / 1000,
+          ),
+          requestOptions: this.buildFollowUpRequestOptions(
+            requestOptions,
+            'schedule',
           ),
         });
       }
@@ -296,6 +314,7 @@ export class BillingSubscriptionUpdateService {
           toUpdateCurrentPrices.resourceCreditPriceId,
         seats: toUpdateCurrentPrices.seats,
         ...subscriptionOptions,
+        requestOptions,
       });
 
       if (isDefined(nextPhase)) {
@@ -324,6 +343,10 @@ export class BillingSubscriptionUpdateService {
             ),
           subscriptionCurrentPeriodEnd: Math.floor(
             subscription.currentPeriodEnd.getTime() / 1000,
+          ),
+          requestOptions: this.buildFollowUpRequestOptions(
+            requestOptions,
+            'schedule',
           ),
         });
       }
@@ -429,6 +452,7 @@ export class BillingSubscriptionUpdateService {
     anchor,
     proration,
     metadata,
+    requestOptions,
   }: {
     stripeSubscriptionId: string;
     licensedStripeItemId: string;
@@ -439,6 +463,7 @@ export class BillingSubscriptionUpdateService {
     anchor?: Stripe.SubscriptionUpdateParams.BillingCycleAnchor;
     proration?: Stripe.SubscriptionUpdateParams.ProrationBehavior;
     metadata?: Record<string, string>;
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>;
   }) {
     return await this.stripeSubscriptionService.updateSubscription(
       stripeSubscriptionId,
@@ -459,6 +484,7 @@ export class BillingSubscriptionUpdateService {
         ...(proration ? { proration_behavior: proration } : {}),
         ...(metadata ? { metadata } : {}),
       },
+      requestOptions,
     );
   }
 
@@ -468,12 +494,14 @@ export class BillingSubscriptionUpdateService {
     toUpdateCurrentPrices,
     currentPhase,
     subscriptionCurrentPeriodEnd,
+    requestOptions,
   }: {
     stripeScheduleId: string;
     toUpdateNextPrices: SubscriptionStripePrices;
     toUpdateCurrentPrices: SubscriptionStripePrices | undefined;
     currentPhase: Stripe.SubscriptionScheduleUpdateParams.Phase;
     subscriptionCurrentPeriodEnd: number;
+    requestOptions?: Pick<Stripe.RequestOptions, 'idempotencyKey'>;
   }) {
     let toUpdateCurrentPhase: Stripe.SubscriptionScheduleUpdateParams.Phase = {
       ...currentPhase,
@@ -512,7 +540,17 @@ export class BillingSubscriptionUpdateService {
       {
         phases: [toUpdateCurrentPhase, toUpdateNextPhase],
       },
+      requestOptions,
     );
+  }
+
+  private buildFollowUpRequestOptions(
+    requestOptions: Pick<Stripe.RequestOptions, 'idempotencyKey'> | undefined,
+    operation: string,
+  ): Pick<Stripe.RequestOptions, 'idempotencyKey'> | undefined {
+    return isDefined(requestOptions?.idempotencyKey)
+      ? { idempotencyKey: `${requestOptions.idempotencyKey}:${operation}` }
+      : undefined;
   }
 
   async shouldUpdateAtSubscriptionPeriodEnd(

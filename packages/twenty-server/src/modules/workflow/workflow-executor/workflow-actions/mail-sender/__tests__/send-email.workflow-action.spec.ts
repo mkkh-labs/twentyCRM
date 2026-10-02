@@ -1,11 +1,15 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
+import { PermissionFlagType } from 'twenty-shared/constants';
 import { WorkflowActionType } from 'twenty-shared/workflow';
 import { SendEmailTool } from 'src/engine/core-modules/tool/tools/email-tool/send-email-tool';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import { SendEmailWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/mail-sender/send-email.workflow-action';
 import { type WorkflowActionSettings } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action-settings.type';
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action.type';
@@ -41,15 +45,17 @@ const MEMBER_ACCOUNT_ID = '20202020-5555-4555-8555-555555555555';
 
 describe('SendEmailWorkflowAction', () => {
   let action: SendEmailWorkflowAction;
-  let mockSendEmailTool: jest.Mocked<Pick<SendEmailTool, 'execute'>>;
+  let mockSendEmailTool: jest.Mocked<Pick<SendEmailTool, 'execute' | 'flag'>>;
   let connectedAccountRepository: { findOne: jest.Mock };
   let userWorkspaceRepository: { findOne: jest.Mock };
   let workspaceMemberRepository: { findOne: jest.Mock };
+  let getWorkspaceRepository: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
     mockSendEmailTool = {
+      flag: PermissionFlagType.SEND_EMAIL_TOOL,
       execute: jest.fn().mockResolvedValue({
         result: { success: true },
         error: undefined,
@@ -58,11 +64,18 @@ describe('SendEmailWorkflowAction', () => {
     connectedAccountRepository = { findOne: jest.fn() };
     userWorkspaceRepository = { findOne: jest.fn() };
     workspaceMemberRepository = { findOne: jest.fn() };
+    getWorkspaceRepository = jest
+      .fn()
+      .mockReturnValue(workspaceMemberRepository);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SendEmailWorkflowAction,
         { provide: SendEmailTool, useValue: mockSendEmailTool },
+        {
+          provide: WorkflowToolEffectService,
+          useValue: { execute: jest.fn(({ execute }) => execute()) },
+        },
         {
           provide: WorkflowRunStepLogWorkspaceService,
           useValue: { setStepLog: jest.fn() },
@@ -71,8 +84,33 @@ describe('SendEmailWorkflowAction', () => {
           provide: WorkspaceOrmManager,
           useValue: {
             executeInWorkspaceContext: jest.fn((callback) => callback()),
-            getRepository: jest.fn().mockReturnValue(workspaceMemberRepository),
+            getRepository: getWorkspaceRepository,
           },
+        },
+        {
+          provide: WorkflowExecutionContextService,
+          useValue: {
+            getExecutionContext: jest.fn().mockResolvedValue({
+              isActingOnBehalfOfUser: true,
+              initiator: {
+                source: 'MANUAL',
+                workspaceMemberId: WORKSPACE_MEMBER_ID,
+              },
+              roleId: 'role-1',
+              rolePermissionConfig: { intersectionOf: ['role-1'] },
+              authContext: {
+                type: 'user',
+                workspace: { id: 'workspace-1' },
+                user: { id: 'user-1' },
+                userWorkspaceId: USER_WORKSPACE_ID,
+                workspaceMemberId: WORKSPACE_MEMBER_ID,
+              },
+            }),
+          },
+        },
+        {
+          provide: PermissionsService,
+          useValue: { hasToolPermission: jest.fn().mockResolvedValue(true) },
         },
         {
           provide: getRepositoryToken(ConnectedAccountEntity),
@@ -343,9 +381,15 @@ describe('SendEmailWorkflowAction', () => {
 
       await executeWithSender(WORKSPACE_MEMBER_ID);
 
+      expect(getWorkspaceRepository).toHaveBeenCalledWith('workspaceMember', {
+        intersectionOf: ['role-1'],
+      });
       expect(mockSendEmailTool.execute).toHaveBeenCalledWith(
         expect.objectContaining({ connectedAccountId: MEMBER_ACCOUNT_ID }),
-        expect.any(Object),
+        expect.objectContaining({
+          workspaceId: 'workspace-1',
+          userWorkspaceId: USER_WORKSPACE_ID,
+        }),
       );
     });
 

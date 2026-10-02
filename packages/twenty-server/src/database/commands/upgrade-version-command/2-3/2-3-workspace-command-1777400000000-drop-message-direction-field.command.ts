@@ -82,6 +82,7 @@ export class DropMessageDirectionFieldCommand extends ProvisionedWorkspaceComman
             },
           },
           workspaceId,
+          isSystemBuild: true,
           applicationUniversalIdentifier:
             twentyStandardFlatApplication.universalIdentifier,
         },

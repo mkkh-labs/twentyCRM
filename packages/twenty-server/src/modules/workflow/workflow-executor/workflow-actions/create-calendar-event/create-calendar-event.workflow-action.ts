@@ -5,6 +5,9 @@ import { type WorkflowRunStepLog } from 'twenty-shared/workflow';
 import { CreateCalendarEventTool } from 'src/engine/core-modules/tool/tools/calendar-tool/create-calendar-event-tool';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { type Tool } from 'src/engine/core-modules/tool/types/tool.type';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import {
   WorkflowStepExecutorException,
   WorkflowStepExecutorExceptionCode,
@@ -21,8 +24,18 @@ export class CreateCalendarEventWorkflowAction extends ToolBackedWorkflowAction<
   constructor(
     private readonly createCalendarEventTool: CreateCalendarEventTool,
     workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
+    workflowToolEffectService: WorkflowToolEffectService,
+    workflowExecutionContextService: WorkflowExecutionContextService,
+    permissionsService: PermissionsService,
   ) {
-    super(CreateCalendarEventWorkflowAction.name, workflowRunStepLogService);
+    super(
+      CreateCalendarEventWorkflowAction.name,
+      'create_calendar_event',
+      workflowRunStepLogService,
+      workflowToolEffectService,
+      workflowExecutionContextService,
+      permissionsService,
+    );
   }
 
   protected getTool(): Tool {

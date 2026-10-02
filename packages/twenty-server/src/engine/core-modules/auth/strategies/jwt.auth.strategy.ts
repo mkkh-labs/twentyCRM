@@ -11,6 +11,7 @@ import {
 } from 'src/engine/core-modules/auth/auth.exception';
 import { type AccessTokenJwtPayload } from 'src/engine/core-modules/auth/types/access-token-jwt-payload.type';
 import { type ApiKeyTokenJwtPayload } from 'src/engine/core-modules/auth/types/api-key-token-jwt-payload.type';
+import { ApplicationStopService } from 'src/engine/core-modules/application/application-stop/application-stop.service';
 import { ApplicationAccessTokenJwtPayload } from 'src/engine/core-modules/auth/types/application-access-token-jwt-payload.type';
 import {
   type AuthContext,
@@ -46,6 +47,7 @@ export class JwtAuthStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly impersonationAuthorizationService: ImpersonationAuthorizationService,
     @InjectRepository(WorkspaceEntity)
     private readonly workspaceRepository: Repository<WorkspaceEntity>,
+    private readonly applicationStopService: ApplicationStopService,
   ) {
     const secretOrKeyProvider: SecretOrKeyProvider = (
       _request,
@@ -354,6 +356,18 @@ export class JwtAuthStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new AuthException(
         'Application not found',
         AuthExceptionCode.APPLICATION_NOT_FOUND,
+      );
+    }
+
+    if (
+      await this.applicationStopService.isApplicationStopped(
+        application.universalIdentifier,
+        workspace.id,
+      )
+    ) {
+      throw new AuthException(
+        'Application is temporarily stopped',
+        AuthExceptionCode.FORBIDDEN_EXCEPTION,
       );
     }
 

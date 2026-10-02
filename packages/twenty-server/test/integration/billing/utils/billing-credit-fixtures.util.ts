@@ -3,11 +3,8 @@ import { type BillingUsageCacheService } from 'src/engine/core-modules/billing/s
 
 import { getAppProviderByClassName } from 'test/integration/utils/get-app-provider-by-class-name.util';
 
-// The dev seeder gives every workspace a billingCustomer and an active
-// billingSubscription, but no subscription item, and no period. Rollover needs
-// the whole chain — subscription -> item -> product -> price with a
-// credit_amount — so these helpers finish the fixture and put the period where
-// the test wants it.
+// The dev seeder provides a valid resource-credit subscription. Rollover tests
+// replace its period and allowance so each boundary assertion stays exact.
 export const TEST_STRIPE_CUSTOMER_ID = 'cus_default0';
 export const TEST_STRIPE_SUBSCRIPTION_ID = 'sub_default0';
 

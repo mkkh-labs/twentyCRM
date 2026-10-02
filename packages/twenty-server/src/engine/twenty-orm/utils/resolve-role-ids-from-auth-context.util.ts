@@ -17,6 +17,13 @@ export const resolveRoleIdsFromAuthContext = ({
   apiKeyRoleMap: Record<string, string>;
 }): string[] => {
   if (isUserAuthContext(authContext)) {
+    if (
+      isDefined(authContext.application) &&
+      !isDefined(authContext.application.defaultRoleId)
+    ) {
+      return [];
+    }
+
     return resolveRoleIdsForUser({
       userRoleId: userWorkspaceRoleMap[authContext.userWorkspaceId],
       applicationRoleId: authContext.application?.defaultRoleId,

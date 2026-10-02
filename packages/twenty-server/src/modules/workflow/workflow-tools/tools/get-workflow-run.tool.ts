@@ -2,17 +2,14 @@ import { isDefined } from 'twenty-shared/utils';
 import { StepStatus } from 'twenty-shared/workflow';
 import { z } from 'zod';
 
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { type WorkflowRunWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 
-type GetWorkflowRunToolContext = WorkflowToolContext & {
-  rolePermissionConfig: RolePermissionConfig;
-};
+type GetWorkflowRunToolContext = WorkflowToolAuthorizedContext;
 
 const getWorkflowRunSchema = z.object({
   workflowRunId: z.uuid().describe('The UUID of the workflow run to inspect'),
@@ -35,7 +32,7 @@ export const createGetWorkflowRunTool = (
   inputSchema: getWorkflowRunSchema,
   execute: async (parameters: GetWorkflowRunInput) => {
     try {
-      const authContext = buildSystemAuthContext(context.workspaceId);
+      const authContext = getWorkflowToolAuthContext(context);
 
       return await deps.workspaceOrmManager.executeInWorkspaceContext(
         async () => {

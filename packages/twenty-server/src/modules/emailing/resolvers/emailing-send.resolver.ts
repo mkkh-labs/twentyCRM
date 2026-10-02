@@ -16,6 +16,7 @@ import { SendMessageCampaignTestInput } from 'src/engine/core-modules/emailing-d
 import { SendMessageCampaignOutputDTO } from 'src/engine/core-modules/emailing-domain/dtos/send-message-campaign-output.dto';
 import { EmailGroupAccessService } from 'src/engine/core-modules/emailing-domain/services/email-group-access.service';
 import { ResolverValidationPipe } from 'src/engine/core-modules/graphql/pipes/resolver-validation.pipe';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
 import { AuthWorkspace } from 'src/engine/decorators/auth/auth-workspace.decorator';
@@ -28,6 +29,7 @@ import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 import { EmailBillingService } from 'src/modules/emailing/services/email-billing.service';
 import { EmailingDomainSenderService } from 'src/modules/emailing/services/emailing-domain-sender.service';
 import { MessageCampaignService } from 'src/modules/emailing/services/message-campaign.service';
+import { MessageCampaignPolicyService } from 'src/modules/emailing/services/message-campaign-policy.service';
 
 @UseGuards(
   WorkspaceAuthGuard,
@@ -46,6 +48,7 @@ export class EmailingSendResolver {
     private readonly messageCampaignService: MessageCampaignService,
     private readonly emailGroupAccessService: EmailGroupAccessService,
     private readonly emailBillingService: EmailBillingService,
+    private readonly messageCampaignPolicyService: MessageCampaignPolicyService,
   ) {}
 
   @Mutation(() => SendEmailViaDomainOutputDTO)
@@ -60,18 +63,32 @@ export class EmailingSendResolver {
     );
 
     const { emailingDomainId, ...content } = input;
-    const result = await this.emailingDomainSenderService.sendEmail(
-      currentWorkspace.id,
-      emailingDomainId,
-      content,
-    );
-
-    await this.emailBillingService.billSentEmails({
+    const { value } = await this.messageCampaignPolicyService.execute({
+      authContext: getWorkspaceAuthContext(),
       workspaceId: currentWorkspace.id,
-      sentEmailCount: 1,
+      operation: 'email.send.direct',
+      riskClass: 'R2',
+      targetResourceType: 'emailingDomain',
+      targetResourceId: emailingDomainId,
+      actionArguments: { ...input },
+      execute: async () => {
+        const result = await this.emailingDomainSenderService.sendEmail(
+          currentWorkspace.id,
+          emailingDomainId,
+          content,
+        );
+
+        await this.emailBillingService.billSentEmails({
+          workspaceId: currentWorkspace.id,
+          sentEmailCount: 1,
+        });
+
+        return result;
+      },
+      getProviderReference: (result) => result.messageId,
     });
 
-    return { messageId: result.messageId };
+    return { messageId: value.messageId };
   }
 
   @Mutation(() => SendMessageCampaignOutputDTO)
@@ -104,16 +121,26 @@ export class EmailingSendResolver {
       currentWorkspace.id,
     );
 
-    const result = await this.messageCampaignService.sendTest({
+    const { value } = await this.messageCampaignPolicyService.execute({
+      authContext: getWorkspaceAuthContext(),
       workspaceId: currentWorkspace.id,
-      toAddress: input.toAddress,
-      unsubscribeTopicId: input.unsubscribeTopicId,
-      subject: input.subject,
-      html: input.body,
-      fromAddress: input.fromAddress,
+      operation: 'campaign.test.send',
+      riskClass: 'R2',
+      targetResourceType: 'messageCampaignTest',
+      actionArguments: { ...input },
+      execute: () =>
+        this.messageCampaignService.sendTest({
+          workspaceId: currentWorkspace.id,
+          toAddress: input.toAddress,
+          unsubscribeTopicId: input.unsubscribeTopicId,
+          subject: input.subject,
+          html: input.body,
+          fromAddress: input.fromAddress,
+        }),
+      getProviderReference: (result) => result.messageId,
     });
 
-    return { messageId: result.messageId };
+    return { messageId: value.messageId };
   }
 
   @Query(() => CampaignAudiencePreviewDTO)

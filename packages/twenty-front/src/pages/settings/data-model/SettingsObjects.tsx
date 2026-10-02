@@ -3,6 +3,8 @@ import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilte
 import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
 import { SettingsDiscoveryHeroCard } from '@/settings/components/SettingsDiscoveryHeroCard';
 import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
+import { SettingsMetadataChangeSets } from '@/settings/data-model/components/SettingsMetadataChangeSets';
+import { SettingsConfigurationVersions } from '@/settings/data-model/components/SettingsConfigurationVersions';
 import DarkCoverImage from '@/settings/data-model/assets/cover-dark.png';
 import LightCoverImage from '@/settings/data-model/assets/cover-light.png';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
@@ -74,6 +76,20 @@ export const SettingsObjects = () => {
             tabs={heroTabs}
             playButtonAriaLabel={t`Watch data model demo`}
           />
+        </Section>
+        <Section>
+          <H2Title
+            title={t`Metadata change sets`}
+            description={t`Review planned, applied, failed, and recoverable metadata changes`}
+          />
+          <SettingsMetadataChangeSets />
+        </Section>
+        <Section>
+          <H2Title
+            title={t`Configuration versions`}
+            description={t`Review immutable contract snapshots and compatibility changes`}
+          />
+          <SettingsConfigurationVersions />
         </Section>
         <Section>
           <H2Title

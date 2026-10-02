@@ -16,6 +16,7 @@ import {
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
 import { type WidgetConfigurationInput } from 'src/modules/dashboard/tools/types/widget-configuration-input.type';
 import { computeDashboardIdentifierMaps } from 'src/modules/dashboard/tools/utils/compute-dashboard-identifier-maps.util';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 import { resolveWidgetFieldNamesToIds } from 'src/modules/dashboard/tools/utils/resolve-widget-field-names-to-metadata-ids.util';
 
 const addDashboardWidgetSchema = z.object({
@@ -67,6 +68,8 @@ See create_complete_dashboard for full configuration examples.`,
     configuration?: WidgetConfigurationInput;
   }) => {
     try {
+      getRequiredDashboardToolAuthContext(context);
+
       const identifierMaps = await computeDashboardIdentifierMaps(
         deps,
         context,

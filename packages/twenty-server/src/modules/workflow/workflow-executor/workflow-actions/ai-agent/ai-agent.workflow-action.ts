@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { resolveInput } from 'twenty-shared/utils';
+import { ToolCategory } from 'twenty-shared/ai';
+import { PermissionFlagType } from 'twenty-shared/constants';
 
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/interfaces/workflow-action.interface';
 
@@ -16,6 +18,9 @@ import {
   WorkflowStepExecutorExceptionCode,
 } from 'src/modules/workflow/workflow-executor/exceptions/workflow-step-executor.exception';
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
+import { WorkflowActionEffectService } from 'src/modules/workflow/workflow-executor/services/workflow-action-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
+import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
 import { type WorkflowActionInput } from 'src/modules/workflow/workflow-executor/types/workflow-action-input';
 import { type WorkflowActionOutput } from 'src/modules/workflow/workflow-executor/types/workflow-action-output.type';
 import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/find-step-or-throw.util';
@@ -34,6 +39,8 @@ export class AiAgentWorkflowAction implements WorkflowAction {
     private readonly workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
     @InjectWorkspaceScopedRepository(AgentEntity)
     private readonly agentRepository: WorkspaceScopedRepository<AgentEntity>,
+    private readonly permissionsService: PermissionsService,
+    private readonly workflowActionEffectService: WorkflowActionEffectService,
   ) {}
 
   async execute({
@@ -79,23 +86,55 @@ export class AiAgentWorkflowAction implements WorkflowAction {
       executionContext.authContext.type === 'user'
         ? executionContext.authContext.userWorkspaceId
         : null;
+    const roleAllowed = await this.permissionsService.checkRolesPermissions(
+      executionContext.rolePermissionConfig,
+      workspaceId,
+      PermissionFlagType.AI,
+    );
 
     const startedAtMs = Date.now();
+    const resolvedPrompt = resolveInput(prompt, context) as string;
+    let executionResult: AgentExecutionResult | undefined;
+    const toolOutput = await this.workflowActionEffectService.execute({
+      actionInput: {
+        agentId: agentId ?? null,
+        promptDigest: buildDeterministicDigest(resolvedPrompt),
+      },
+      category: ToolCategory.ACTION,
+      description: 'Execute an AI agent workflow step',
+      executionContext,
+      executionRef: { kind: 'static', toolId: 'ai_workflow_agent' },
+      name: 'workflow_ai_agent',
+      providerClass: 'workflow-ai-agent',
+      roleAllowed,
+      runInfo,
+      stepId: currentStepId,
+      execute: async () => {
+        executionResult = await this.aiAgentExecutionService.executeAgent({
+          agent,
+          messages: [{ role: 'user', content: resolvedPrompt }],
+          baseSystemPrompt: WORKFLOW_BASE_SYSTEM_PROMPT,
+          actorContext: executionContext.isActingOnBehalfOfUser
+            ? executionContext.initiator
+            : undefined,
+          authContext: executionContext.authContext,
+          workspaceId,
+          userWorkspaceId,
+          operationType: UsageOperationType.AI_WORKFLOW_TOKEN,
+          rootCorrelationId: runInfo.rootCorrelationId ?? runInfo.workflowRunId,
+        });
 
-    const executionResult = await this.aiAgentExecutionService.executeAgent({
-      agent,
-      messages: [
-        { role: 'user', content: resolveInput(prompt, context) as string },
-      ],
-      baseSystemPrompt: WORKFLOW_BASE_SYSTEM_PROMPT,
-      actorContext: executionContext.isActingOnBehalfOfUser
-        ? executionContext.initiator
-        : undefined,
-      authContext: executionContext.authContext,
-      workspaceId,
-      userWorkspaceId,
-      operationType: UsageOperationType.AI_WORKFLOW_TOKEN,
+        return {
+          success: true,
+          message: 'AI workflow step executed',
+          result: executionResult.result,
+        };
+      },
     });
+
+    if (!toolOutput.success || executionResult === undefined) {
+      return { error: toolOutput.error || toolOutput.message };
+    }
 
     const durationMs = Date.now() - startedAtMs;
 

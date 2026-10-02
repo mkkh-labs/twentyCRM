@@ -9,16 +9,24 @@ export const selectConnectedAccountIdForCaller = ({
     ConnectedAccountEntity,
     'id' | 'visibility' | 'userWorkspaceId'
   >[];
-  userWorkspaceId: string;
+  userWorkspaceId?: string;
 }): string | undefined => {
   const ownAccount = connectedAccounts.find(
-    (connectedAccount) => connectedAccount.userWorkspaceId === userWorkspaceId,
+    (connectedAccount) =>
+      userWorkspaceId !== undefined &&
+      connectedAccount.userWorkspaceId === userWorkspaceId,
   );
 
   const usableAccount =
     ownAccount ??
-    connectedAccounts.find((connectedAccount) =>
-      isConnectedAccountUsableByCaller({ connectedAccount, userWorkspaceId }),
+    connectedAccounts.find(
+      (connectedAccount) =>
+        connectedAccount.visibility === 'workspace' ||
+        (userWorkspaceId !== undefined &&
+          isConnectedAccountUsableByCaller({
+            connectedAccount,
+            userWorkspaceId,
+          })),
     );
 
   return usableAccount?.id;

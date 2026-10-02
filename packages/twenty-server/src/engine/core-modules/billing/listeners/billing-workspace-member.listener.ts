@@ -2,6 +2,7 @@
 
 import { Injectable } from '@nestjs/common';
 
+import { randomUUID } from 'crypto';
 import { type ObjectRecordCreateEvent } from 'twenty-shared/database-events';
 
 import { OnDatabaseBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-database-batch-event.decorator';
@@ -42,9 +43,15 @@ export class BillingWorkspaceMemberListener {
     // don't each generate a new Stripe invoice.
     await this.messageQueueService.add<UpdateSubscriptionQuantityJobData>(
       UpdateSubscriptionQuantityJob.name,
-      { workspaceId: payload.workspaceId },
+      { workspaceId: payload.workspaceId, operationId: randomUUID() },
       {
         delay: UPDATE_SUBSCRIPTION_QUANTITY_JOB_DELAY_MS,
+        retryLimit: 2,
+        backoff: {
+          strategy: 'exponential',
+          initialDelayMilliseconds: 30_000,
+          jitter: 0.2,
+        },
       },
     );
   }

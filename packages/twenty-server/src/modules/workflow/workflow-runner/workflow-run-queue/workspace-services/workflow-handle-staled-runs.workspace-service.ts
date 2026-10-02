@@ -6,6 +6,7 @@ import { StepStatus } from 'twenty-shared/workflow';
 import { type FindOptionsWhere } from 'typeorm';
 
 import { InjectCacheStorage } from 'src/engine/core-modules/cache-storage/decorators/cache-storage.decorator';
+import { withWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
 import { CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
 import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/types/cache-storage-namespace.enum';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
@@ -14,12 +15,12 @@ import { MessageQueueService } from 'src/engine/core-modules/message-queue/servi
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowRunStatus,
   WorkflowRunWorkspaceEntity,
 } from 'src/modules/workflow/common/standard-objects/workflow-run.workspace-entity';
 import { workflowHasRunningSteps } from 'src/modules/workflow/common/utils/workflow-has-running-steps.util';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import { workflowShouldFail } from 'src/modules/workflow/workflow-executor/utils/workflow-should-fail.util';
 import { workflowShouldKeepRunning } from 'src/modules/workflow/workflow-executor/utils/workflow-should-keep-running.util';
 import { type RunWorkflowJobData } from 'src/modules/workflow/workflow-runner/types/run-workflow-job-data.type';
@@ -44,15 +45,17 @@ export class WorkflowHandleStaledRunsWorkspaceService {
     private readonly metricsService: MetricsService,
     @InjectCacheStorage(CacheStorageNamespace.ModuleWorkflow)
     private readonly cacheStorageService: CacheStorageService,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {}
 
   async handleStaledRunsForWorkspace(workspaceId: string) {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowRunRepository = this.workspaceOrmManager.getRepository(
         WorkflowRunWorkspaceEntity,
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
       const staledRunsCount = await workflowRunRepository.count({
@@ -97,6 +100,17 @@ export class WorkflowHandleStaledRunsWorkspaceService {
   }
 
   async handleStuckStoppingRunsForWorkspace(workspaceId: string) {
+    const { authContext } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
+
+    return withWorkspaceAuthContext(authContext, () =>
+      this.handleStuckStoppingRunsWithScopedAuthority(workspaceId),
+    );
+  }
+
+  private async handleStuckStoppingRunsWithScopedAuthority(
+    workspaceId: string,
+  ) {
     const stuckStoppingRunIds = await this.collectRunIds({
       workspaceId,
       findOptions: getStuckStoppingRunsFindOptions(),
@@ -122,6 +136,15 @@ export class WorkflowHandleStaledRunsWorkspaceService {
   // Flagged runs are re-checked on every sweep; one that ends or gets a new
   // job on its own is a false positive, disproving that it was stuck forever.
   async handleStuckRunningRunsForWorkspace(workspaceId: string) {
+    const { authContext } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
+
+    return withWorkspaceAuthContext(authContext, () =>
+      this.handleStuckRunningRunsWithScopedAuthority(workspaceId),
+    );
+  }
+
+  private async handleStuckRunningRunsWithScopedAuthority(workspaceId: string) {
     const cacheKey = getStuckRunningRunsMonitorCacheKey(workspaceId);
     const flaggedRuns =
       (await this.cacheStorageService.get<Record<string, string>>(cacheKey)) ??
@@ -276,12 +299,13 @@ export class WorkflowHandleStaledRunsWorkspaceService {
     workspaceId: string;
     findOptions: FindOptionsWhere<WorkflowRunWorkspaceEntity>;
   }): Promise<string[]> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowRunRepository = this.workspaceOrmManager.getRepository(
         WorkflowRunWorkspaceEntity,
-        { shouldBypassPermissionChecks: true },
+        rolePermissionConfig,
       );
 
       const runIds: string[] = [];

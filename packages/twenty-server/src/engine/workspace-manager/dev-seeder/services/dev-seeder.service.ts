@@ -24,6 +24,7 @@ import { WorkspaceCacheStorageService } from 'src/engine/workspace-cache-storage
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 import { WorkspaceSchemaService } from 'src/engine/workspace-datasource/workspace-schema.service';
 import { seedBillingCustomers } from 'src/engine/workspace-manager/dev-seeder/core/billing/utils/seed-billing-customers.util';
+import { seedBillingEntitlements } from 'src/engine/workspace-manager/dev-seeder/core/billing/utils/seed-billing-entitlements.util';
 import { seedBillingSubscriptions } from 'src/engine/workspace-manager/dev-seeder/core/billing/utils/seed-billing-subscriptions.util';
 import {
   type SeededWorkspacesIds,
@@ -334,6 +335,11 @@ export class DevSeederService {
 
       if (seedBilling) {
         await seedBillingCustomers({ queryRunner, schemaName, workspaceId });
+        await seedBillingEntitlements({
+          queryRunner,
+          schemaName,
+          workspaceId,
+        });
         await seedBillingSubscriptions({
           queryRunner,
           schemaName,

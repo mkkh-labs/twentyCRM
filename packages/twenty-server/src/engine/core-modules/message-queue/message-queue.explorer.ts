@@ -22,6 +22,7 @@ import { MESSAGE_QUEUE_WORKER_CONFIG } from 'src/engine/core-modules/message-que
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { EventLoopStallMonitorService } from 'src/engine/core-modules/message-queue/services/event-loop-stall-monitor.service';
 import { getQueueToken } from 'src/engine/core-modules/message-queue/utils/get-queue-token.util';
+import { buildMessageQueueJobContext } from 'src/engine/core-modules/message-queue/utils/build-message-queue-job-context.util';
 import { shouldCreateWorkerForQueue } from 'src/engine/core-modules/message-queue/utils/should-create-worker-for-queue.util';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { shouldCaptureException } from 'src/engine/utils/global-exception-handler.util';
@@ -267,11 +268,11 @@ export class MessageQueueExplorer implements OnModuleInit {
     for (const processMethodName of processMethodNames) {
       try {
         // @ts-expect-error legacy noImplicitAny
-        await instance[processMethodName].call(instance, job.data, {
-          abortSignal: job.abortSignal,
-          retryLimit: job.retryLimit,
-          updateData: job.updateData,
-        });
+        await instance[processMethodName].call(
+          instance,
+          job.data,
+          buildMessageQueueJobContext(job),
+        );
       } catch (err) {
         if (shouldCaptureException(err)) {
           this.exceptionHandlerService.captureExceptions([err]);

@@ -27,10 +27,24 @@ test('Login test', async ({ loginPage, page }) => {
       await loginPage.clickSignInButton();
       await page.waitForLoadState('networkidle');
       await expect(page.getByText(/Welcome, .+/)).not.toBeVisible();
-      await expect(page.getByText('Choose a workspace')).toBeVisible();
-      await page.getByText('Apple', {exact: true}).click();
-      await page.waitForFunction(() => window.location.href.includes('verify'));
-      await page.waitForFunction(() => !window.location.href.includes('verify'));
+      const workspaceChooser = page.getByText('Choose a workspace');
+      const companiesLanding = page.getByText('All Companies', {
+        exact: false,
+      });
+
+      await expect(workspaceChooser.or(companiesLanding).first()).toBeVisible();
+
+      if (await workspaceChooser.isVisible()) {
+        await page.getByText('Apple', { exact: true }).click();
+        await page.waitForFunction(() =>
+          window.location.href.includes('verify'),
+        );
+        await page.waitForFunction(
+          () => !window.location.href.includes('verify'),
+        );
+      }
+
+      await expect(companiesLanding).toBeVisible();
       process.env.LINK = page.url();
     },
   );

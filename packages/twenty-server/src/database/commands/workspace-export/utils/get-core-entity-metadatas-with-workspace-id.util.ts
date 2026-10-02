@@ -5,7 +5,7 @@ export const getCoreEntityMetadatasWithWorkspaceId = (
 ) => {
   return dataSource.entityMetadatas.filter((entityMetadata) =>
     entityMetadata.columns.some(
-      (column) => column.propertyName === 'workspaceId',
+      (column) => column.databaseName === 'workspaceId',
     ),
   );
 };

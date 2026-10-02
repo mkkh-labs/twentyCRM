@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import request from 'supertest';
+import { FeatureFlagKey } from 'twenty-shared/types';
 
+import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
 import { deleteRecordsByIds } from 'test/integration/utils/delete-records-by-ids';
 
 const TOOL_NAMES = {
@@ -100,6 +102,12 @@ describe('MCP find tools relation selection (integration)', () => {
   const opportunityBName = `mcp-relation-select-opportunity-b-${randomUUID()}`;
 
   beforeAll(async () => {
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: true,
+      expectToFail: false,
+    });
+
     const company = await executeWorkspaceTool<CreatedRecord>(
       TOOL_NAMES.createCompany,
       { name: companyName },
@@ -128,6 +136,11 @@ describe('MCP find tools relation selection (integration)', () => {
       [opportunityAId, opportunityBId].filter(Boolean),
     );
     await deleteRecordsByIds('company', [companyId].filter(Boolean));
+    await updateFeatureFlag({
+      featureFlag: FeatureFlagKey.IS_AGENT_WRITES_ENABLED,
+      value: false,
+      expectToFail: false,
+    });
   });
 
   it('should hydrate a one-to-many relation selected by name in find_many', async () => {

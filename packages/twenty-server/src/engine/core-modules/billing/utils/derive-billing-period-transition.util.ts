@@ -1,6 +1,5 @@
 /* @license Enterprise */
 
-import { subMonths, subYears } from 'date-fns';
 import { isDefined } from 'twenty-shared/utils';
 
 import { SubscriptionInterval } from 'src/engine/core-modules/billing/enums/billing-subscription-interval.enum';
@@ -10,6 +9,44 @@ export type BillingPeriodTransition = {
   closingPeriodEnd: Date;
   nextPeriodStart: Date;
   nextPeriodEnd: Date;
+};
+
+const subtractUtcCalendarMonths = (date: Date, monthCount: number): Date => {
+  const targetMonth = date.getUTCMonth() - monthCount;
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(date.getUTCFullYear(), targetMonth + 1, 0),
+  ).getUTCDate();
+
+  return new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      targetMonth,
+      Math.min(date.getUTCDate(), lastDayOfTargetMonth),
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds(),
+    ),
+  );
+};
+
+const subtractUtcCalendarYears = (date: Date, yearCount: number): Date => {
+  const targetYear = date.getUTCFullYear() - yearCount;
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(targetYear, date.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+
+  return new Date(
+    Date.UTC(
+      targetYear,
+      date.getUTCMonth(),
+      Math.min(date.getUTCDate(), lastDayOfTargetMonth),
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds(),
+    ),
+  );
 };
 
 // A subscription_cycle invoice is raised at the instant one period hands over
@@ -85,8 +122,8 @@ export const deriveBillingPeriodTransition = ({
     // those from February 1 would place the closing period at January 4 and
     // drop three days of usage, which then reads as unspent allowance.
     return subscriptionInterval === SubscriptionInterval.Year
-      ? subYears(boundary, 1)
-      : subMonths(boundary, 1);
+      ? subtractUtcCalendarYears(boundary, 1)
+      : subtractUtcCalendarMonths(boundary, 1);
   })();
 
   return {

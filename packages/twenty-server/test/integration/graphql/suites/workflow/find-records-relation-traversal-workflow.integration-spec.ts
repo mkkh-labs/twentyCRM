@@ -272,7 +272,7 @@ describe('FindRecords workflow action with relation-traversal filter (e2e)', () 
     expect(activateResponse.body.errors).toBeUndefined();
   };
 
-  const runWithCompanyName = async (companyName: string | null) => {
+  const runWithCompanyName = async (companyName: string | null | undefined) => {
     const workflowRunId = await runWorkflowVersion({
       workflowVersionId: createdWorkflowVersionId!,
       payload: { companyName },
@@ -340,7 +340,7 @@ describe('FindRecords workflow action with relation-traversal filter (e2e)', () 
     expect(returnedIds).not.toContain(TEST_PERSON_STRIPE_1_ID);
   });
 
-  it('should complete the run when the filter value resolves to empty', async () => {
+  it('applies the existing IS_EMPTY semantics when the filter resolves to null', async () => {
     const workflowRun = await runWithCompanyName(null);
 
     expect(workflowRun?.status).toBe('COMPLETED');
@@ -353,7 +353,28 @@ describe('FindRecords workflow action with relation-traversal filter (e2e)', () 
       | { all?: Array<{ id: string }>; totalCount?: number | string }
       | undefined;
 
-    expect(result?.all).toEqual([]);
-    expect(Number(result?.totalCount)).toBe(0);
+    expect(
+      result?.all?.every(
+        (record) =>
+          (record as { companyId?: string | null }).companyId === null,
+      ),
+    ).toBe(true);
+    expect(result?.all?.map((record) => record.id)).toEqual(
+      expect.not.arrayContaining(ALL_TEST_PERSON_IDS),
+    );
+    expect(Number(result?.totalCount)).toBeGreaterThanOrEqual(
+      result?.all?.length ?? 0,
+    );
+  });
+
+  it('fails closed when the filter variable cannot be resolved', async () => {
+    const workflowRun = await runWithCompanyName(undefined);
+    const stepInfo = workflowRun?.state?.stepInfos?.[findRecordsStepId!];
+
+    expect(workflowRun?.status).toBe('FAILED');
+    expect(stepInfo?.status).toBe('FAILED');
+    expect(stepInfo?.error).toContain(
+      'Filter condition has an empty value after variable resolution',
+    );
   });
 });

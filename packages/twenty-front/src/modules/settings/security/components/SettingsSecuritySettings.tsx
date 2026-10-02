@@ -16,6 +16,11 @@ import { SettingsRolesQueryEffect } from '@/settings/roles/components/SettingsRo
 import { useSettingsAllRoles } from '@/settings/roles/hooks/useSettingsAllRoles';
 import { SettingsSSOIdentitiesProvidersListCard } from '@/settings/security/components/SSO/SettingsSSOIdentitiesProvidersListCard';
 import { SettingsSecurityAuthBypassOptionsList } from '@/settings/security/components/SettingsSecurityAuthBypassOptionsList';
+import { SettingsAgentActionApprovals } from '@/settings/security/components/SettingsAgentActionApprovals';
+import { SettingsPolicyAuditExplorer } from '@/settings/security/components/SettingsPolicyAuditExplorer';
+import { SettingsWorkflowOperations } from '@/settings/security/components/SettingsWorkflowOperations';
+import { SettingsOutboxOperations } from '@/settings/security/components/SettingsOutboxOperations';
+import { useHasPermissionFlag } from '@/settings/roles/hooks/useHasPermissionFlag';
 import { SettingsSecurityAuthProvidersOptionsList } from '@/settings/security/components/SettingsSecurityAuthProvidersOptionsList';
 import { SettingsSecurityEditableProfileFields } from '@/settings/security/components/SettingsSecurityEditableProfileFields';
 import { SSOIdentitiesProvidersState } from '@/settings/security/states/SSOIdentitiesProvidersState';
@@ -35,7 +40,10 @@ import { H2Title } from 'twenty-ui/typography';
 import { Section } from 'twenty-ui/layout';
 import { Card } from 'twenty-ui/surfaces';
 import { themeCssVariables } from 'twenty-ui/theme-constants';
-import { UpdateWorkspaceDocument } from '~/generated-metadata/graphql';
+import {
+  PermissionFlagType,
+  UpdateWorkspaceDocument,
+} from '~/generated-metadata/graphql';
 import { OrganizationAdornment } from '~/pages/settings/enterprise/components/OrganizationAdornment';
 
 const StyledContainer = styled.div`
@@ -56,6 +64,9 @@ const StyledSectionContainer = styled.div`
 export const SettingsSecuritySettings = () => {
   const { t } = useLingui();
   const { enqueueErrorSnackBar } = useSnackBar();
+  const hasWorkflowPermission = useHasPermissionFlag(
+    PermissionFlagType.WORKFLOWS,
+  );
 
   const isMultiWorkspaceEnabled = useAtomStateValue(
     isMultiWorkspaceEnabledState,
@@ -233,6 +244,36 @@ export const SettingsSecuritySettings = () => {
               description={t`Manage support access settings`}
             />
             <ToggleImpersonate />
+          </Section>
+        )}
+        <Section>
+          <H2Title
+            title={t`Agent Action Approvals`}
+            description={t`Review short-lived approvals for material or destructive agent actions`}
+          />
+          <SettingsAgentActionApprovals />
+        </Section>
+        <Section>
+          <H2Title
+            title={t`Policy Audit Explorer`}
+            description={t`Trace protected decisions, effects, outcomes, and reconciliation by actor or correlation ID`}
+          />
+          <SettingsPolicyAuditExplorer />
+        </Section>
+        <Section>
+          <H2Title
+            title={t`Transactional Event Operations`}
+            description={t`Inspect event delivery, retry exhaustion, and reconciliation requirements`}
+          />
+          <SettingsOutboxOperations />
+        </Section>
+        {hasWorkflowPermission && (
+          <Section>
+            <H2Title
+              title={t`Workflow Operations`}
+              description={t`Inspect protected effects, retry exhaustion, dead letters, and replay safety`}
+            />
+            <SettingsWorkflowOperations />
           </Section>
         )}
         <Section>

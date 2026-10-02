@@ -21,7 +21,6 @@ import { NavigationMenuItemType } from 'src/engine/metadata-modules/navigation-m
 import { NavigationMenuItemService } from 'src/engine/metadata-modules/navigation-menu-item/navigation-menu-item.service';
 import { ViewService } from 'src/engine/metadata-modules/view/services/view.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 
 @Injectable()
 export class NavigateAppTool implements Tool {
@@ -73,6 +72,7 @@ export class NavigateAppTool implements Tool {
           input.objectNameSingular,
           input.recordName,
           context.workspaceId,
+          context,
         );
       case 'wait':
         return this.wait(input.durationMs);
@@ -263,7 +263,22 @@ export class NavigateAppTool implements Tool {
     objectNameSingular: string,
     recordName: string,
     workspaceId: string,
+    context: ToolExecutionContext,
   ): Promise<ToolOutput<NavigateAppToolOutput>> {
+    if (
+      !isDefined(context.authContext) ||
+      !isDefined(context.rolePermissionConfig) ||
+      context.authContext.workspace.id !== workspaceId ||
+      'shouldBypassPermissionChecks' in context.rolePermissionConfig
+    ) {
+      return {
+        success: false,
+        message: 'Record navigation unavailable',
+        error:
+          'Record navigation requires current object-record read authority.',
+      };
+    }
+
     const { flatObjectMetadataMaps, flatFieldMetadataMaps } =
       await this.workspaceManyOrAllFlatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps(
         {
@@ -331,30 +346,47 @@ export class NavigateAppTool implements Tool {
         ]
       : ['id', labelIdentifierField.name];
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    let records: ObjectRecord[];
 
-    const records = await this.workspaceOrmManager.executeInWorkspaceContext(
-      async () => {
-        const repository = this.workspaceOrmManager.getRepository<ObjectRecord>(
-          objectNameSingular,
-          { shouldBypassPermissionChecks: true },
-        );
+    try {
+      records = await this.workspaceOrmManager.executeInWorkspaceContext(
+        async () => {
+          const repository =
+            this.workspaceOrmManager.getRepository<ObjectRecord>(
+              objectNameSingular,
+              context.rolePermissionConfig,
+            );
 
-        return repository.find({
-          select: selectColumns,
-        });
-      },
-      authContext,
-    );
+          return repository.find({
+            select: selectColumns,
+          });
+        },
+        context.authContext,
+      );
+    } catch {
+      return {
+        success: false,
+        message: 'Record navigation unavailable',
+        error:
+          'Record navigation requires current object-record read authority.',
+      };
+    }
 
     const recordsWithDisplayName = records.map((record) => {
       let displayName: string;
 
       if (isFullName) {
+        const compoundName = record[labelIdentifierField.name] as
+          | { firstName?: string; lastName?: string }
+          | undefined;
         const firstName =
-          (record[`${labelIdentifierField.name}FirstName`] as string) ?? '';
+          compoundName?.firstName ??
+          (record[`${labelIdentifierField.name}FirstName`] as string) ??
+          '';
         const lastName =
-          (record[`${labelIdentifierField.name}LastName`] as string) ?? '';
+          compoundName?.lastName ??
+          (record[`${labelIdentifierField.name}LastName`] as string) ??
+          '';
 
         displayName = `${firstName} ${lastName}`.trim();
       } else {

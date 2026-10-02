@@ -206,7 +206,7 @@ export const successfulCreateInputByFieldMetadataType: {
         dateField: '2025-01-13',
       },
       validateInput: (record: Record<string, any>) => {
-        return new Date(record.dateField).toDateString() === 'Mon Jan 13 2025';
+        return record.dateField === '2025-01-13';
       },
     },
   ],

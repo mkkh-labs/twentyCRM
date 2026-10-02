@@ -13,6 +13,7 @@ import {
   assertRestApiErrorResponse,
   assertRestApiSuccessfulResponse,
 } from 'test/integration/rest/utils/rest-test-assertions.util';
+import { WorkspaceMigrationV2ExceptionCode } from 'twenty-shared/metadata';
 import { FeatureFlagKey } from 'twenty-shared/types';
 
 type ObjectShape = { id: string; fields: unknown[]; labelSingular?: string };
@@ -464,44 +465,51 @@ describe.each([
   });
 
   describe('DELETE /metadata/objects/:id', () => {
-    it('deletes the object and returns the deleted resource', async () => {
+    it('requires a change set before deleting the object', async () => {
       const { id } = await createTestObjectViaGraphql();
 
-      const patchResponse = await makeRestAPIRequest({
-        method: 'patch',
-        path: `/metadata/objects/${id}`,
-        body: { isActive: false },
-        bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
-      });
+      try {
+        const patchResponse = await makeRestAPIRequest({
+          method: 'patch',
+          path: `/metadata/objects/${id}`,
+          body: { isActive: false },
+          bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
+        });
 
-      assertRestApiSuccessfulResponse(patchResponse);
+        assertRestApiSuccessfulResponse(patchResponse);
 
-      const deleteResponse = await makeRestAPIRequest({
-        method: 'delete',
-        path: `/metadata/objects/${id}`,
-        bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
-      });
+        const deleteResponse = await makeRestAPIRequest({
+          method: 'delete',
+          path: `/metadata/objects/${id}`,
+          bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
+        });
 
-      assertRestApiSuccessfulResponse(deleteResponse);
-      const deleted = extractMetadataItemPayload<{ id: string }>(
-        deleteResponse.body,
-        'deleteOneObject',
-      );
+        expect(deleteResponse.status).toBe(409);
+        expect(deleteResponse.body).toMatchObject({
+          statusCode: 409,
+          code: WorkspaceMigrationV2ExceptionCode.CHANGE_SET_REQUIRED,
+          messages: [
+            'Destructive metadata changes require explicit authorization.',
+          ],
+        });
 
-      expect(deleted.id).toBe(id);
-      if (isNewFormat) {
-        expect(deleteResponse.body).not.toHaveProperty('data.deleteOneObject');
-      } else {
-        expect(deleteResponse.body).toHaveProperty('data.deleteOneObject');
+        const getResponse = await makeRestAPIRequest({
+          method: 'get',
+          path: `/metadata/objects/${id}`,
+          bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
+        });
+
+        assertRestApiSuccessfulResponse(getResponse);
+
+        const retained = extractMetadataItemPayload<{ id: string }>(
+          getResponse.body,
+          'object',
+        );
+
+        expect(retained.id).toBe(id);
+      } finally {
+        await cleanupTestObject(id);
       }
-
-      const getResponse = await makeRestAPIRequest({
-        method: 'get',
-        path: `/metadata/objects/${id}`,
-        bearer: APPLE_JANE_ADMIN_ACCESS_TOKEN,
-      });
-
-      assertRestApiErrorNotFoundResponse(getResponse);
     });
 
     it('returns 404 for an unknown id', async () => {

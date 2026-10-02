@@ -16,7 +16,6 @@ import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queu
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowRunStatus,
   WorkflowRunWorkspaceEntity,
@@ -27,6 +26,7 @@ import {
   WorkflowCleanWorkflowRunsJobData,
 } from 'src/modules/workflow/workflow-runner/workflow-run-queue/jobs/workflow-clean-workflow-runs.job';
 import { getRunsToCleanFindOptions } from 'src/modules/workflow/workflow-runner/workflow-run-queue/utils/get-runs-to-clean-find-options.util';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 
 export const CLEAN_WORKFLOW_RUN_CRON_PATTERN = '0 */3 * * *';
 
@@ -47,6 +47,7 @@ export class WorkflowCleanWorkflowRunsCronJob {
     private readonly exceptionHandlerService: ExceptionHandlerService,
     @InjectCacheStorage(CacheStorageNamespace.ModuleWorkflow)
     private readonly cacheStorageService: CacheStorageService,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {}
 
   @Process(WorkflowCleanWorkflowRunsCronJob.name)
@@ -135,13 +136,14 @@ export class WorkflowCleanWorkflowRunsCronJob {
   }
 
   private async hasRunsToClean(workspaceId: string): Promise<boolean> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.workflowServiceAuthorityWorkspaceService.resolve(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const workflowRunRepository = this.workspaceOrmManager.getRepository(
           WorkflowRunWorkspaceEntity,
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
         const hasOldRuns = await workflowRunRepository.exists({

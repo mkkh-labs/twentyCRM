@@ -8,6 +8,7 @@ import { useFieldMetadataItem } from '@/object-metadata/hooks/useFieldMetadataIt
 import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilteredObjectMetadataItems';
 import { useGetIsMetadataItemCustom } from '@/object-metadata/hooks/useGetIsMetadataItemCustom';
 import { useGetRelationMetadata } from '@/object-metadata/hooks/useGetRelationMetadata';
+import { type PreparedMetadataDeletion } from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { useUpdateOneFieldMetadataItem } from '@/object-metadata/hooks/useUpdateOneFieldMetadataItem';
 import { formatFieldMetadataItemInput } from '@/object-metadata/utils/formatFieldMetadataItemInput';
 import { isLabelIdentifierField } from '@/object-metadata/utils/isLabelIdentifierField';
@@ -17,6 +18,7 @@ import { resolveJunctionConfig } from '@/object-record/record-field/ui/utils/jun
 import { SaveAndCancelButtons } from '@/settings/components/SaveAndCancelButtons/SaveAndCancelButtons';
 import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
 import { FIELD_NAME_MAXIMUM_LENGTH } from '@/settings/data-model/constants/FieldNameMaximumLength';
+import { MetadataDeletionImpactSummary } from '@/settings/data-model/components/MetadataDeletionImpactSummary';
 import { SettingsDataModelFieldDescriptionForm } from '@/settings/data-model/fields/forms/components/SettingsDataModelFieldDescriptionForm';
 import { SettingsTranslationsButton } from '@/settings/translations/components/SettingsTranslationsButton';
 import { SettingsDataModelFieldIconLabelForm } from '@/settings/data-model/fields/forms/components/SettingsDataModelFieldIconLabelForm';
@@ -90,12 +92,15 @@ export const SettingsObjectFieldEdit = () => {
     deactivateMetadataField,
     activateMetadataField,
     deleteMetadataField,
+    prepareDeleteMetadataField,
   } = useFieldMetadataItem();
 
   const [newNameDuringSave, setNewNameDuringSave] = useState<string | null>(
     null,
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [preparedDeletion, setPreparedDeletion] =
+    useState<PreparedMetadataDeletion | null>(null);
 
   const fieldMetadataItem = objectMetadataItem?.fields.find(
     (fieldMetadataItem) =>
@@ -279,16 +284,31 @@ export const SettingsObjectFieldEdit = () => {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (readonly || !isCustomField) {
       return;
     }
 
+    setIsDeleting(true);
+    const preparation = await prepareDeleteMetadataField({
+      idToDelete: fieldMetadataItem.id,
+    });
+    setIsDeleting(false);
+
+    if (preparation.status === 'failed') {
+      return;
+    }
+
+    setPreparedDeletion(preparation.response);
     openModal(DELETE_FIELD_MODAL_ID);
   };
 
   const confirmDelete = async () => {
-    if (!isDefined(objectMetadataItem) || !isDefined(fieldMetadataItem)) {
+    if (
+      !isDefined(objectMetadataItem) ||
+      !isDefined(fieldMetadataItem) ||
+      preparedDeletion === null
+    ) {
       return;
     }
 
@@ -296,6 +316,7 @@ export const SettingsObjectFieldEdit = () => {
 
     const deleteResult = await deleteMetadataField({
       idToDelete: fieldMetadataItem.id,
+      preparedDeletion,
     });
 
     if (deleteResult.status === 'successful') {
@@ -303,6 +324,7 @@ export const SettingsObjectFieldEdit = () => {
         message: t`Field deleted`,
       });
       closeModal(DELETE_FIELD_MODAL_ID);
+      setPreparedDeletion(null);
       navigateSettings(SettingsPath.ObjectDetail, {
         objectNamePlural,
       });
@@ -311,6 +333,7 @@ export const SettingsObjectFieldEdit = () => {
 
     setIsDeleting(false);
     closeModal(DELETE_FIELD_MODAL_ID);
+    setPreparedDeletion(null);
   };
 
   return (
@@ -450,12 +473,20 @@ export const SettingsObjectFieldEdit = () => {
         <ConfirmationModal
           modalInstanceId={DELETE_FIELD_MODAL_ID}
           title={t`Delete ${fieldLabel} field?`}
-          subtitle={t`This will permanently delete the field and all its data from ${objectLabel}. Type "yes" to confirm.`}
+          subtitle={
+            <MetadataDeletionImpactSummary
+              description={t`This will permanently delete the field and all its data from ${objectLabel}. Type "yes" to confirm.`}
+              preparedDeletion={preparedDeletion}
+            />
+          }
           confirmButtonText={t`Delete`}
           confirmationValue="yes"
           confirmationPlaceholder="yes"
           onConfirmClick={confirmDelete}
-          onClose={() => closeModal(DELETE_FIELD_MODAL_ID)}
+          onClose={() => {
+            closeModal(DELETE_FIELD_MODAL_ID);
+            setPreparedDeletion(null);
+          }}
           loading={isDeleting}
         />
       )}

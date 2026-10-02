@@ -6,8 +6,6 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowVersionStepException,
   WorkflowVersionStepExceptionCode,
@@ -16,11 +14,12 @@ import { WorkflowVersionStatus } from 'src/modules/workflow/common/standard-obje
 import { WorkflowStatus } from 'src/modules/workflow/common/standard-objects/workflow.workspace-entity';
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action.type';
 import {
-  type WorkflowToolContext,
+  type WorkflowToolAuthorizedContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 import { summarizeValidation } from 'src/modules/workflow/workflow-tools/utils/summarize-validation.util';
 import { type WorkflowTrigger } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger.type';
+import { getWorkflowToolAuthContext } from 'src/modules/workflow/workflow-tools/utils/get-workflow-tool-auth-context.util';
 
 const createCompleteWorkflowSchema = z.object({
   name: z.string().describe('The name of the workflow'),
@@ -62,9 +61,7 @@ type CreateCompleteWorkflowToolDeps = Pick<
   | 'workflowVersionCoreSyncService'
 >;
 
-type CreateCompleteWorkflowToolContext = WorkflowToolContext & {
-  rolePermissionConfig: RolePermissionConfig;
-};
+type CreateCompleteWorkflowToolContext = WorkflowToolAuthorizedContext;
 
 export const createCreateCompleteWorkflowTool = (
   deps: CreateCompleteWorkflowToolDeps,
@@ -159,12 +156,18 @@ The response includes a compact validation summary. For the full validation repo
       await deps.workflowVersionService.autoLayoutWorkflowVersion({
         workflowVersionId,
         workspaceId: context.workspaceId,
+        authContext: context.authContext,
+        rolePermissionConfig: context.rolePermissionConfig,
       });
 
       if (parameters.activate) {
         await deps.workflowTriggerService.activateWorkflowVersion(
           workflowVersionId,
           context.workspaceId,
+          {
+            authContext: context.authContext,
+            rolePermissionConfig: context.rolePermissionConfig,
+          },
         );
 
         await updateWorkflowStatus({
@@ -219,7 +222,7 @@ const createWorkflow = async ({
   context: CreateCompleteWorkflowToolContext;
   name: string;
 }): Promise<string> => {
-  const authContext = buildSystemAuthContext(context.workspaceId);
+  const authContext = getWorkflowToolAuthContext(context);
 
   return deps.workspaceOrmManager.executeInWorkspaceContext(async () => {
     const workflowRepository = deps.workspaceOrmManager.getRepository(
@@ -290,6 +293,10 @@ const createWorkflowVersion = async ({
 
       return workflowVersionId;
     },
+    {
+      authContext: getWorkflowToolAuthContext(context),
+      rolePermissionConfig: context.rolePermissionConfig,
+    },
   );
 
   return workflowVersionId;
@@ -306,7 +313,7 @@ const updateWorkflowStatus = async ({
   workflowId: string;
   workflowVersionId: string;
 }) => {
-  const authContext = buildSystemAuthContext(context.workspaceId);
+  const authContext = getWorkflowToolAuthContext(context);
 
   await deps.workspaceOrmManager.executeInWorkspaceContext(async () => {
     const workflowRepository = deps.workspaceOrmManager.getRepository(

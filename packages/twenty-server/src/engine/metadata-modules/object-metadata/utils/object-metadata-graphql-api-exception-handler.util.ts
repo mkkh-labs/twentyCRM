@@ -14,10 +14,16 @@ import {
 import { InvalidMetadataException } from 'src/engine/metadata-modules/utils/exceptions/invalid-metadata.exception';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
 import { workspaceMigrationBuilderGraphqlApiExceptionHandler } from 'src/engine/workspace-manager/workspace-migration/interceptors/utils/workspace-migration-builder-graphql-api-exception-handler.util';
+import { workspaceMigrationV2GraphqlApiExceptionHandler } from 'src/engine/workspace-manager/workspace-migration/interceptors/utils/workspace-migration-v2-graphql-api-exception-handler.util';
+import { WorkspaceMigrationV2Exception } from 'src/engine/workspace-manager/workspace-migration.exception';
 
 export const objectMetadataGraphqlApiExceptionHandler = (error: unknown) => {
   if (error instanceof WorkspaceMigrationBuilderException) {
     return workspaceMigrationBuilderGraphqlApiExceptionHandler(error);
+  }
+
+  if (error instanceof WorkspaceMigrationV2Exception) {
+    return workspaceMigrationV2GraphqlApiExceptionHandler(error);
   }
 
   if (error instanceof InvalidMetadataException) {

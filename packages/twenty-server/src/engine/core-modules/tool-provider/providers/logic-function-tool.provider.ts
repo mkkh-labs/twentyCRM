@@ -11,11 +11,13 @@ import { type ToolProvider } from 'src/engine/core-modules/tool-provider/interfa
 import { type ToolProviderContext } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
 
 import { ToolCategory } from 'twenty-shared/ai';
+import { PermissionFlagType } from 'twenty-shared/constants';
 import { type ToolDescriptor } from 'src/engine/core-modules/tool-provider/types/tool-descriptor.type';
 import { type ToolIndexEntry } from 'src/engine/core-modules/tool-provider/types/tool-index-entry.type';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { type FlatLogicFunction } from 'src/engine/metadata-modules/logic-function/types/flat-logic-function.type';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 
 @Injectable()
 export class LogicFunctionToolProvider implements ToolProvider {
@@ -23,10 +25,15 @@ export class LogicFunctionToolProvider implements ToolProvider {
 
   constructor(
     private readonly flatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
-  async isAvailable(_context: ToolProviderContext): Promise<boolean> {
-    return true;
+  async isAvailable(context: ToolProviderContext): Promise<boolean> {
+    return this.permissionsService.hasToolPermission(
+      context.rolePermissionConfig,
+      context.workspaceId,
+      PermissionFlagType.CODE_INTERPRETER_TOOL,
+    );
   }
 
   // Logic function tools emit `executionRef.kind === 'logic_function'`

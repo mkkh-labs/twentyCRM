@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import { type ToolSet } from 'ai';
 import { PermissionFlagType } from 'twenty-shared/constants';
+import { isDefined } from 'twenty-shared/utils';
 
 import { type GenerateDescriptorOptions } from 'src/engine/core-modules/tool-provider/interfaces/generate-descriptor-options.type';
 import { type ToolProvider } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider.interface';
@@ -18,7 +19,11 @@ import { toolSetToDescriptors } from 'src/engine/core-modules/tool-provider/util
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
+import { getObjectsPermissionsFromRolePermissionConfig } from 'src/engine/twenty-orm/utils/get-objects-permissions-from-role-permission-config.util';
+import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
 import type { DashboardToolWorkspaceService } from 'src/modules/dashboard/tools/services/dashboard-tool.workspace-service';
+
+const DASHBOARD_READ_TOOL_NAMES = new Set(['list_dashboards', 'get_dashboard']);
 
 @Injectable()
 export class DashboardToolProvider implements ToolProvider {
@@ -30,6 +35,7 @@ export class DashboardToolProvider implements ToolProvider {
     private readonly dashboardToolService: DashboardToolWorkspaceService | null,
     private readonly permissionsService: PermissionsService,
     private readonly flatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
+    private readonly workspaceCacheService: WorkspaceCacheService,
   ) {}
 
   async isAvailable(context: ToolProviderContext): Promise<boolean> {
@@ -94,9 +100,59 @@ export class DashboardToolProvider implements ToolProvider {
       return null;
     }
 
-    return this.dashboardToolService.generateDashboardTools(
-      context.workspaceId,
-      context.rolePermissionConfig,
+    const toolSet = this.dashboardToolService.generateDashboardTools({
+      workspaceId: context.workspaceId,
+      rolePermissionConfig: context.rolePermissionConfig,
+      authContext: context.authContext,
+    });
+
+    const [{ rolesPermissions }, { flatObjectMetadataMaps }] =
+      await Promise.all([
+        this.workspaceCacheService.getOrRecompute(context.workspaceId, [
+          'rolesPermissions',
+        ]),
+        this.flatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps({
+          workspaceId: context.workspaceId,
+          flatMapsKeys: ['flatObjectMetadataMaps'],
+        }),
+      ]);
+    const dashboardObject = Object.values(
+      flatObjectMetadataMaps.byUniversalIdentifier,
+    ).find((flatObject) => flatObject?.nameSingular === 'dashboard');
+
+    if (!isDefined(dashboardObject)) {
+      return {};
+    }
+
+    const dashboardPermission = getObjectsPermissionsFromRolePermissionConfig({
+      rolesPermissions,
+      rolePermissionConfig: context.rolePermissionConfig,
+    })[dashboardObject.id];
+
+    if (!isDefined(dashboardPermission)) {
+      return {};
+    }
+
+    const restrictedFieldPermissions = Object.values(
+      dashboardPermission.restrictedFields,
+    ).filter(isDefined);
+    const canRead =
+      dashboardPermission.canReadObjectRecords === true &&
+      restrictedFieldPermissions.every(
+        (fieldPermission) => fieldPermission.canRead !== false,
+      );
+    const canMutate =
+      canRead &&
+      dashboardPermission.canUpdateObjectRecords === true &&
+      restrictedFieldPermissions.every(
+        (fieldPermission) => fieldPermission.canUpdate !== false,
+      ) &&
+      dashboardPermission.rowLevelPermissionPredicates.length === 0 &&
+      dashboardPermission.rowLevelPermissionPredicateGroups.length === 0;
+    return Object.fromEntries(
+      Object.entries(toolSet).filter(([toolName]) =>
+        DASHBOARD_READ_TOOL_NAMES.has(toolName) ? canRead : canMutate,
+      ),
     );
   }
 }

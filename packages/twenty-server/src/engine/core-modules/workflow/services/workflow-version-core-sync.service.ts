@@ -19,7 +19,16 @@ import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace
 import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+import { getWorkspaceSchemaName } from 'src/engine/workspace-datasource/utils/get-workspace-schema-name.util';
+import { escapeIdentifier } from 'src/engine/workspace-manager/workspace-migration/utils/remove-sql-injection.util';
 import { type WorkflowVersionWorkspaceEntity } from 'src/modules/workflow/common/standard-objects/workflow-version.workspace-entity';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
+import {
+  PolicyException,
+  PolicyExceptionCode,
+} from 'src/engine/core-modules/policy/policy.exception';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 
 @Injectable()
 export class WorkflowVersionCoreSyncService {
@@ -209,6 +218,7 @@ export class WorkflowVersionCoreSyncService {
 
     if (isNewLink) {
       await this.writeBackCoreVersionIdInTransaction(
+        workspaceId,
         workflowVersion.id,
         coreWorkflowVersionId,
         transactionScope,
@@ -279,37 +289,51 @@ export class WorkflowVersionCoreSyncService {
       workflowVersionRepository: WorkspaceRepository<WorkflowVersionWorkspaceEntity>,
       transactionScope: WorkspaceTransactionScope,
     ) => Promise<string>,
-  ): Promise<void> {
-    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.workspaceOrmManager.runInWorkspaceTransaction(
-        async (transactionScope) => {
-          const workflowVersionRepository =
-            transactionScope.getRepository<WorkflowVersionWorkspaceEntity>(
-              'workflowVersion',
-              { shouldBypassPermissionChecks: true },
-            );
+    authority?: Readonly<{
+      authContext: WorkspaceAuthContext;
+      rolePermissionConfig: ScopedRolePermissionConfig;
+    }>,
+  ): Promise<WorkflowVersionWorkspaceEntity | null> {
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId, authority);
 
-          const workflowVersionId = await write(
-            workflowVersionRepository,
-            transactionScope,
-          );
+    const workflowVersion =
+      await this.workspaceOrmManager.executeInWorkspaceContext(
+        () =>
+          this.workspaceOrmManager.runInWorkspaceTransaction(
+            async (transactionScope) => {
+              const workflowVersionRepository =
+                transactionScope.getRepository<WorkflowVersionWorkspaceEntity>(
+                  'workflowVersion',
+                  rolePermissionConfig,
+                );
 
-          const workflowVersion = await workflowVersionRepository.findOne({
-            where: { id: workflowVersionId },
-          });
+              const workflowVersionId = await write(
+                workflowVersionRepository,
+                transactionScope,
+              );
 
-          if (isDefined(workflowVersion)) {
-            await this.mirrorWorkflowVersionWrite({
-              workspaceId,
-              transactionScope,
-              workflowVersion,
-            });
-          }
-        },
+              const workflowVersion = await workflowVersionRepository.findOne({
+                where: { id: workflowVersionId },
+              });
+
+              if (isDefined(workflowVersion)) {
+                await this.mirrorWorkflowVersionWrite({
+                  workspaceId,
+                  transactionScope,
+                  workflowVersion,
+                });
+              }
+
+              return workflowVersion;
+            },
+          ),
+        authContext,
       );
-    }, buildSystemAuthContext(workspaceId));
 
     await this.invalidateAutomatedTriggerMaps(workspaceId);
+
+    return workflowVersion;
   }
 
   async deleteCoreVersionsByWorkflowIds(
@@ -330,17 +354,24 @@ export class WorkflowVersionCoreSyncService {
   async deleteCoreVersionsByWorkspaceVersionIds(
     workspaceId: string,
     workflowVersionIds: string[],
+    authority?: Readonly<{
+      authContext?: WorkspaceAuthContext;
+      rolePermissionConfig?: ScopedRolePermissionConfig;
+    }>,
   ): Promise<void> {
     if (workflowVersionIds.length === 0) {
       return;
     }
+
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId, authority);
 
     const coreWorkflowVersionIds =
       await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
         const workflowVersionRepository =
           this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
             'workflowVersion',
-            { shouldBypassPermissionChecks: true },
+            rolePermissionConfig,
           );
 
         const versions = await workflowVersionRepository.find({
@@ -351,7 +382,7 @@ export class WorkflowVersionCoreSyncService {
         return versions
           .map((version) => version.coreWorkflowVersionId)
           .filter(isNonEmptyString);
-      }, buildSystemAuthContext(workspaceId));
+      }, authContext);
 
     await this.deleteFromCore(workspaceId, coreWorkflowVersionIds);
   }
@@ -359,12 +390,19 @@ export class WorkflowVersionCoreSyncService {
   async recreateCoreVersionsByWorkflowId(
     workspaceId: string,
     workflowId: string,
+    authority?: Readonly<{
+      authContext?: WorkspaceAuthContext;
+      rolePermissionConfig?: ScopedRolePermissionConfig;
+    }>,
   ): Promise<void> {
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId, authority);
+
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowVersionRepository =
         this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
           'workflowVersion',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const versions = await workflowVersionRepository.find({
@@ -372,7 +410,38 @@ export class WorkflowVersionCoreSyncService {
       });
 
       await this.upsertToCore(workspaceId, versions);
-    }, buildSystemAuthContext(workspaceId));
+    }, authContext);
+  }
+
+  private async resolveScopedAuthority(
+    workspaceId: string,
+    authority?: Readonly<{
+      authContext?: WorkspaceAuthContext;
+      rolePermissionConfig?: ScopedRolePermissionConfig;
+    }>,
+  ): Promise<{
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
+  }> {
+    const authContext = authority?.authContext ?? getWorkspaceAuthContext();
+    const rolePermissionConfig =
+      authority?.rolePermissionConfig ??
+      (await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      ));
+
+    if (
+      authContext.workspace.id !== workspaceId ||
+      rolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in rolePermissionConfig
+    ) {
+      throw new PolicyException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        PolicyExceptionCode.CONTEXT_INVALID,
+      );
+    }
+
+    return { authContext, rolePermissionConfig };
   }
 
   private async writeBackCoreVersionIds(
@@ -391,38 +460,42 @@ export class WorkflowVersionCoreSyncService {
       return;
     }
 
-    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const workspaceWorkflowVersionRepository =
-        this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
-          'workflowVersion',
-          { shouldBypassPermissionChecks: true },
-        );
-
-      for (const [
-        workspaceRecordId,
-        coreWorkflowVersionId,
-      ] of coreVersionIdByWorkspaceRecordId) {
-        await workspaceWorkflowVersionRepository.update(workspaceRecordId, {
-          coreWorkflowVersionId,
-        });
-      }
-    }, buildSystemAuthContext(workspaceId));
+    await this.workspaceOrmManager.executeInWorkspaceContext(
+      () =>
+        this.workspaceOrmManager.runInWorkspaceTransaction(
+          async (transactionScope) => {
+            for (const [
+              workspaceRecordId,
+              coreWorkflowVersionId,
+            ] of coreVersionIdByWorkspaceRecordId) {
+              await this.writeBackCoreVersionIdInTransaction(
+                workspaceId,
+                workspaceRecordId,
+                coreWorkflowVersionId,
+                transactionScope,
+              );
+            }
+          },
+        ),
+      buildSystemAuthContext(workspaceId),
+    );
   }
 
   private async writeBackCoreVersionIdInTransaction(
+    workspaceId: string,
     workflowVersionId: string,
     coreWorkflowVersionId: string,
     transactionScope: WorkspaceTransactionScope,
   ): Promise<void> {
-    const workspaceWorkflowVersionRepository =
-      transactionScope.getRepository<WorkflowVersionWorkspaceEntity>(
-        'workflowVersion',
-        { shouldBypassPermissionChecks: true },
-      );
+    const workspaceSchemaName = escapeIdentifier(
+      getWorkspaceSchemaName(workspaceId),
+    );
 
-    await workspaceWorkflowVersionRepository.update(
-      { id: workflowVersionId },
-      { coreWorkflowVersionId },
+    await transactionScope.executeRawQuery(
+      `UPDATE ${workspaceSchemaName}."workflowVersion"
+       SET "coreWorkflowVersionId" = $1
+       WHERE "id" = $2`,
+      [coreWorkflowVersionId, workflowVersionId],
     );
   }
 

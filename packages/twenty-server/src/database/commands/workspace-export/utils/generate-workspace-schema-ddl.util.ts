@@ -25,6 +25,11 @@ import {
   collectEnumOperationsForObject,
 } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-runner/utils/workspace-schema-enum-operations.util';
 
+export type PhysicalColumnNullabilityByTable = ReadonlyMap<
+  string,
+  ReadonlyMap<string, boolean>
+>;
+
 const buildSearchFieldMetadataDerivationInputs = ({
   fieldMetadatas,
   objectSearchFieldMetadatas,
@@ -78,6 +83,7 @@ export const generateWorkspaceSchemaDdl = (
   objectMetadatas: ObjectMetadataEntity[],
   fieldsByObjectId: Map<string, FieldMetadataEntity[]>,
   searchFieldMetadatasByObjectId: Map<string, SearchFieldMetadataEntity[]>,
+  physicalColumnNullabilityByTable: PhysicalColumnNullabilityByTable = new Map(),
 ): string[] => {
   const statements: string[] = [];
 
@@ -92,7 +98,11 @@ export const generateWorkspaceSchemaDdl = (
     const fieldMetadatas = fieldsByObjectId.get(objectMetadata.id) ?? [];
 
     const flatFieldMetadatas = fieldMetadatas as unknown as FlatFieldMetadata[];
-    const flatObjectMetadata = objectMetadata as unknown as FlatObjectMetadata;
+    const flatObjectMetadata = {
+      ...objectMetadata,
+      applicationUniversalIdentifier:
+        objectMetadata.application?.universalIdentifier,
+    } as unknown as FlatObjectMetadata;
 
     const { indexedFieldById, flatSearchFieldMetadataMaps } =
       buildSearchFieldMetadataDerivationInputs({
@@ -139,9 +149,17 @@ export const generateWorkspaceSchemaDdl = (
 
     if (columnDefinitions.length === 0) continue;
 
+    const physicalColumnNullability =
+      physicalColumnNullabilityByTable.get(tableName);
     const columnsSql = columnDefinitions
       .map(
-        (columnDefinition) => `  ${buildSqlColumnDefinition(columnDefinition)}`,
+        (columnDefinition) =>
+          `  ${buildSqlColumnDefinition({
+            ...columnDefinition,
+            isNullable:
+              physicalColumnNullability?.get(columnDefinition.name) ??
+              columnDefinition.isNullable,
+          })}`,
       )
       .join(',\n');
 

@@ -12,6 +12,8 @@ import type { WorkflowVersionStepHelpersWorkspaceService } from 'src/modules/wor
 import type { WorkflowVersionStepWorkspaceService } from 'src/modules/workflow/workflow-builder/workflow-version-step/workflow-version-step.workspace-service';
 import type { WorkflowVersionWorkspaceService } from 'src/modules/workflow/workflow-builder/workflow-version/workflow-version.workspace-service';
 import type { WorkflowTriggerWorkspaceService } from 'src/modules/workflow/workflow-trigger/workspace-services/workflow-trigger.workspace-service';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 
 export type WorkflowToolDependencies = {
   workflowVersionStepService: WorkflowVersionStepWorkspaceService;
@@ -32,4 +34,10 @@ export type WorkflowToolDependencies = {
 
 export type WorkflowToolContext = {
   workspaceId: string;
+  authContext?: WorkspaceAuthContext;
+  rolePermissionConfig?: ScopedRolePermissionConfig;
+};
+
+export type WorkflowToolAuthorizedContext = WorkflowToolContext & {
+  rolePermissionConfig: ScopedRolePermissionConfig;
 };

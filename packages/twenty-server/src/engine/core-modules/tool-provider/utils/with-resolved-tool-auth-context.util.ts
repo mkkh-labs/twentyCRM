@@ -1,7 +1,14 @@
 import { isDefined } from 'twenty-shared/utils';
 
+import {
+  AuthException,
+  AuthExceptionCode,
+} from 'src/engine/core-modules/auth/auth.exception';
 import { withWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
-import { type ToolProviderContext } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
+import {
+  type ResolvedToolProviderContext,
+  type ToolProviderContext,
+} from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
 import { type ToolAuthContextDependencies } from 'src/engine/core-modules/tool-provider/types/tool-auth-context-dependencies.type';
 import { buildRequiredToolAuthContext } from 'src/engine/core-modules/tool-provider/utils/build-required-tool-auth-context.util';
 
@@ -9,8 +16,6 @@ import { buildRequiredToolAuthContext } from 'src/engine/core-modules/tool-provi
 // HTTP requests; only the latter get an async-local auth context from
 // WorkspaceAuthContextMiddleware. Establish it around the dispatch so any
 // tool code relying on getWorkspaceAuthContext() works on every transport.
-// Without a resolvable identity the dispatch runs outside any auth context,
-// as before.
 export const withResolvedToolAuthContext = async <T>(
   {
     context,
@@ -18,7 +23,7 @@ export const withResolvedToolAuthContext = async <T>(
     userWorkspaceRepository,
     workspaceCacheService,
   }: { context: ToolProviderContext } & ToolAuthContextDependencies,
-  dispatch: (contextWithAuth: ToolProviderContext) => Promise<T>,
+  dispatch: (contextWithAuth: ResolvedToolProviderContext) => Promise<T>,
 ): Promise<T> => {
   const authContext =
     context.authContext ??
@@ -32,7 +37,10 @@ export const withResolvedToolAuthContext = async <T>(
       : undefined);
 
   if (!isDefined(authContext)) {
-    return dispatch(context);
+    throw new AuthException(
+      'A validated tool identity is required before dispatch.',
+      AuthExceptionCode.UNAUTHENTICATED,
+    );
   }
 
   return await withWorkspaceAuthContext(authContext, () =>

@@ -1,5 +1,7 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 
+import { ViewFilterOperand } from 'twenty-shared/types';
+
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
@@ -7,24 +9,44 @@ import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/works
 import { type WorkspaceEventBatch } from 'src/engine/workspace-event-emitter/types/workspace-event-batch.type';
 import { AutomatedTriggerType } from 'src/modules/workflow/common/standard-objects/workflow-automated-trigger.workspace-entity';
 import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 import { WorkflowDatabaseEventTriggerListener } from 'src/modules/workflow/workflow-trigger/automated-trigger/listeners/workflow-database-event-trigger.listener';
 import { WorkflowTriggerJob } from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
+
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
+const WORKFLOW_ID = '22222222-2222-4222-8222-222222222222';
+const WORKFLOW_VERSION_ID = '22222222-2222-4222-8222-222222222223';
+const OBJECT_METADATA_ID = '33333333-3333-4333-8333-333333333333';
+const RECORD_ID = '44444444-4444-4444-8444-444444444444';
+const SECOND_RECORD_ID = '55555555-5555-4555-8555-555555555555';
 
 describe('WorkflowDatabaseEventTriggerListener', () => {
   let listener: WorkflowDatabaseEventTriggerListener;
   let workspaceOrmManager: jest.Mocked<WorkspaceOrmManager>;
   let messageQueueService: jest.Mocked<MessageQueueService>;
   let workspaceCacheService: jest.Mocked<WorkspaceCacheService>;
+  let workflowServiceAuthority: jest.Mocked<WorkflowServiceAuthorityWorkspaceService>;
+  let recordRepository: { findOneBy: jest.Mock };
 
   const setTriggerMap = (
-    listeners: Array<{ workflowId: string; settings: object; type?: unknown }>,
+    listeners: Array<{
+      workflowId: string;
+      workflowVersionId?: string;
+      settings: object;
+      type?: unknown;
+    }>,
   ) => {
     workspaceCacheService.getOrRecompute.mockResolvedValue({
       workflowAutomatedTriggerMaps: {
         byWorkflowId: Object.fromEntries(
           listeners.map((listener) => [
             listener.workflowId,
-            { type: AutomatedTriggerType.DATABASE_EVENT, ...listener },
+            {
+              type: AutomatedTriggerType.DATABASE_EVENT,
+              workflowVersionId: WORKFLOW_VERSION_ID,
+              ...listener,
+            },
           ]),
         ),
       },
@@ -35,8 +57,8 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
     overrides: Partial<FlatObjectMetadata>,
   ): FlatObjectMetadata =>
     ({
-      id: 'test-object-metadata',
-      workspaceId: 'test-workspace',
+      id: OBJECT_METADATA_ID,
+      workspaceId: WORKSPACE_ID,
       nameSingular: 'testObject',
       namePlural: 'testObjects',
       labelSingular: 'Test Object',
@@ -51,7 +73,7 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       icon: 'Icon123',
-      universalIdentifier: 'test-object-metadata',
+      universalIdentifier: OBJECT_METADATA_ID,
       fieldIds: [],
       indexMetadataIds: [],
       viewIds: [],
@@ -60,8 +82,13 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
     }) as FlatObjectMetadata;
 
   beforeEach(async () => {
+    recordRepository = {
+      findOneBy: jest.fn(({ id }: { id: string }) =>
+        Promise.resolve({ id, field1: 'new', field2: 'new' }),
+      ),
+    };
     workspaceOrmManager = {
-      getRepository: jest.fn().mockReturnValue({ find: jest.fn() }),
+      getRepository: jest.fn().mockReturnValue(recordRepository),
       executeInWorkspaceContext: jest
         .fn()
         .mockImplementation((fn: () => any, _authContext?: any) => fn()),
@@ -75,6 +102,17 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       getOrRecompute: jest.fn().mockResolvedValue({
         workflowAutomatedTriggerMaps: { byWorkflowId: {} },
       } as never),
+    } as any;
+
+    workflowServiceAuthority = {
+      resolve: jest.fn().mockResolvedValue({
+        authContext: {
+          type: 'application',
+          workspace: { id: WORKSPACE_ID },
+          application: { id: 'application-id' },
+        },
+        rolePermissionConfig: { unionOf: ['role-id'] },
+      }),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -107,6 +145,20 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
             }),
           },
         },
+        {
+          provide: WorkflowServiceAuthorityWorkspaceService,
+          useValue: workflowServiceAuthority,
+        },
+        {
+          provide: WorkflowTriggerProvenanceService,
+          useValue: {
+            sign: jest.fn().mockReturnValue({
+              signatureVersion: 1,
+              signatureKeyId: 'a'.repeat(64),
+              signature: 'b'.repeat(64),
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -116,9 +168,9 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
   });
 
   describe('handleObjectRecordUpdateEvent', () => {
-    const workspaceId = 'test-workspace';
+    const workspaceId = WORKSPACE_ID;
     const databaseEventName = 'testEvent';
-    const workflowId = 'test-workflow';
+    const workflowId = WORKFLOW_ID;
 
     const mockPayload: WorkspaceEventBatch<any> = {
       workspaceId,
@@ -126,7 +178,7 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       objectMetadata: createMockFlatObjectMetadata({}),
       events: [
         {
-          recordId: 'test-record',
+          recordId: RECORD_ID,
           properties: {
             updatedFields: ['field1', 'field2'],
             before: { field1: 'old', field2: 'old' },
@@ -147,20 +199,61 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       },
     ];
 
+    const expectDatabaseEventReference = ({
+      callIndex = 0,
+      action,
+      recordId,
+      updatedFields,
+    }: {
+      callIndex?: number;
+      action: string;
+      recordId: string;
+      updatedFields: string[];
+    }) => {
+      const [jobName, jobData, options] = messageQueueService.add.mock.calls[
+        callIndex
+      ] as unknown as [string, Record<string, any>, Record<string, any>];
+
+      expect(jobName).toBe(WorkflowTriggerJob.name);
+      expect(jobData).toMatchObject({
+        triggerType: 'database-event',
+        workspaceId,
+        workflowId,
+        databaseEvent: {
+          schemaVersion: 1,
+          provenance: 'WORKSPACE_DATABASE_EVENT',
+          policyVersion: 'p0-v1',
+          workspaceId,
+          workflowId,
+          workflowVersionId: WORKFLOW_VERSION_ID,
+          triggerConfigurationDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          objectMetadataId: OBJECT_METADATA_ID,
+          objectNameSingular: 'testObject',
+          action,
+          recordId,
+          updatedFields,
+          signatureVersion: 1,
+          signatureKeyId: 'a'.repeat(64),
+          signature: 'b'.repeat(64),
+        },
+      });
+      expect(jobData.databaseEvent).not.toHaveProperty('properties');
+      expect(options).toEqual({
+        id: jobData.databaseEvent.idempotencyKey,
+        retryLimit: 3,
+      });
+    };
+
     it('should trigger workflow when fields are specified and match updated fields', async () => {
       setTriggerMap(mockEventListeners);
 
       await listener.handleObjectRecordUpdateEvent(mockPayload);
 
-      expect(messageQueueService.add).toHaveBeenCalledWith(
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: mockPayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
+      expectDatabaseEventReference({
+        action: 'updated',
+        recordId: RECORD_ID,
+        updatedFields: ['field1', 'field2'],
+      });
     });
 
     it('should trigger workflow when no fields are specified', async () => {
@@ -211,6 +304,55 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       expect(messageQueueService.add).not.toHaveBeenCalled();
     });
 
+    it('rejects oversized event references before queue persistence', async () => {
+      setTriggerMap([
+        {
+          ...mockEventListeners[0],
+          settings: { eventName: databaseEventName, fields: undefined },
+        },
+      ]);
+
+      await listener.handleObjectRecordUpdateEvent({
+        ...mockPayload,
+        events: [
+          {
+            ...mockPayload.events[0],
+            properties: {
+              ...mockPayload.events[0].properties,
+              updatedFields: Array.from(
+                { length: 1_001 },
+                (_, index) => `field${index}`,
+              ),
+            },
+          },
+        ],
+      });
+
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
+    it('does not include event contents in missing-routing logs', async () => {
+      const logger = (listener as any).logger;
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation();
+
+      await listener.handleObjectRecordUpdateEvent({
+        ...mockPayload,
+        workspaceId: '',
+        events: [
+          {
+            ...mockPayload.events[0],
+            properties: { after: { secret: 'SENTINEL-SECRET' } },
+          },
+        ],
+      });
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls.flat().join(' ')).not.toContain(
+        'SENTINEL-SECRET',
+      );
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
     it('should handle create events correctly', async () => {
       const createPayload: WorkspaceEventBatch<any> = {
         ...mockPayload,
@@ -237,18 +379,14 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
 
       await listener.handleObjectRecordCreateEvent(createPayload);
 
-      expect(messageQueueService.add).toHaveBeenCalledWith(
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: createPayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
+      expectDatabaseEventReference({
+        action: 'created',
+        recordId: RECORD_ID,
+        updatedFields: [],
+      });
     });
 
-    it('should handle delete events correctly', async () => {
+    it('should deny delete events without scoped snapshot authority', async () => {
       const deletePayload: WorkspaceEventBatch<any> = {
         ...mockPayload,
         name: 'deleteEvent',
@@ -274,18 +412,10 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
 
       await listener.handleObjectRecordDeleteEvent(deletePayload);
 
-      expect(messageQueueService.add).toHaveBeenCalledWith(
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: deletePayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
+      expect(messageQueueService.add).not.toHaveBeenCalled();
     });
 
-    it('should handle destroy events correctly', async () => {
+    it('should deny destroy events without scoped snapshot authority', async () => {
       const destroyPayload: WorkspaceEventBatch<any> = {
         ...mockPayload,
         name: 'destroyEvent',
@@ -311,15 +441,7 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
 
       await listener.handleObjectRecordDestroyEvent(destroyPayload);
 
-      expect(messageQueueService.add).toHaveBeenCalledWith(
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: destroyPayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
+      expect(messageQueueService.add).not.toHaveBeenCalled();
     });
 
     it('should handle multiple events in a batch', async () => {
@@ -329,7 +451,7 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
           mockPayload.events[0],
           {
             ...mockPayload.events[0],
-            recordId: 'test-record-2',
+            recordId: SECOND_RECORD_ID,
             properties: {
               updatedFields: ['field1'],
               before: { field1: 'old' },
@@ -353,26 +475,18 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
       await listener.handleObjectRecordUpdateEvent(batchPayload);
 
       expect(messageQueueService.add).toHaveBeenCalledTimes(2);
-      expect(messageQueueService.add).toHaveBeenNthCalledWith(
-        1,
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: batchPayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
-      expect(messageQueueService.add).toHaveBeenNthCalledWith(
-        2,
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: batchPayload.events[1],
-        },
-        { retryLimit: 3 },
-      );
+      expectDatabaseEventReference({
+        callIndex: 0,
+        action: 'updated',
+        recordId: RECORD_ID,
+        updatedFields: ['field1', 'field2'],
+      });
+      expectDatabaseEventReference({
+        callIndex: 1,
+        action: 'updated',
+        recordId: SECOND_RECORD_ID,
+        updatedFields: ['field1'],
+      });
     });
 
     it('should trigger workflow for position-only updates when no fields are specified', async () => {
@@ -402,15 +516,11 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
 
       await listener.handleObjectRecordUpdateEvent(positionOnlyPayload);
 
-      expect(messageQueueService.add).toHaveBeenCalledWith(
-        WorkflowTriggerJob.name,
-        {
-          workspaceId,
-          workflowId,
-          payload: positionOnlyPayload.events[0],
-        },
-        { retryLimit: 3 },
-      );
+      expectDatabaseEventReference({
+        action: 'updated',
+        recordId: RECORD_ID,
+        updatedFields: ['position'],
+      });
     });
 
     it('should trigger workflow when position changes alongside another field', async () => {
@@ -470,6 +580,90 @@ describe('WorkflowDatabaseEventTriggerListener', () => {
 
       await listener.handleObjectRecordUpdateEvent(positionOnlyPayload);
 
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
+    it('denies before record access or queueing when workflow authority is unresolved', async () => {
+      setTriggerMap(mockEventListeners);
+      workflowServiceAuthority.resolve.mockRejectedValue(
+        new Error('Application role is unresolved'),
+      );
+
+      await listener.handleObjectRecordUpdateEvent(mockPayload);
+
+      expect(workspaceOrmManager.getRepository).not.toHaveBeenCalled();
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
+    it('denies before queueing when the scoped role cannot read the record', async () => {
+      setTriggerMap(mockEventListeners);
+      recordRepository.findOneBy.mockResolvedValue(undefined);
+
+      await listener.handleObjectRecordUpdateEvent(mockPayload);
+
+      expect(workflowServiceAuthority.resolve).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+      );
+      expect(workspaceOrmManager.getRepository).toHaveBeenCalledWith(
+        'testObject',
+        { unionOf: ['role-id'] },
+      );
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
+    it('denies a cross-workspace object binding before trigger discovery', async () => {
+      await listener.handleObjectRecordUpdateEvent({
+        ...mockPayload,
+        objectMetadata: createMockFlatObjectMetadata({
+          workspaceId: '77777777-7777-4777-8777-777777777777',
+        }),
+      });
+
+      expect(workspaceCacheService.getOrRecompute).not.toHaveBeenCalled();
+      expect(workflowServiceAuthority.resolve).not.toHaveBeenCalled();
+      expect(messageQueueService.add).not.toHaveBeenCalled();
+    });
+
+    it('evaluates record filters against the scoped projection, not the raw event', async () => {
+      setTriggerMap([
+        {
+          ...mockEventListeners[0],
+          settings: {
+            eventName: databaseEventName,
+            fields: ['field1'],
+            filter: {
+              stepFilterGroups: [],
+              stepFilters: [
+                {
+                  id: 'filter-1',
+                  type: 'TEXT',
+                  operand: ViewFilterOperand.CONTAINS,
+                  value: 'raw-event-secret',
+                  stepOutputKey: '{{trigger.properties.after.field1}}',
+                  stepFilterGroupId: 'unused',
+                },
+              ],
+            },
+          },
+        },
+      ]);
+
+      await listener.handleObjectRecordUpdateEvent({
+        ...mockPayload,
+        events: [
+          {
+            ...mockPayload.events[0],
+            properties: {
+              ...mockPayload.events[0].properties,
+              after: { field1: 'raw-event-secret' },
+            },
+          },
+        ],
+      });
+
+      expect(recordRepository.findOneBy).toHaveBeenCalledWith({
+        id: RECORD_ID,
+      });
       expect(messageQueueService.add).not.toHaveBeenCalled();
     });
   });

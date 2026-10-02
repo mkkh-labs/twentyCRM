@@ -33,6 +33,7 @@ import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-
 import { GenerateSdkClientJob } from 'src/engine/core-modules/sdk-client/jobs/generate-sdk-client.job';
 import { SdkClientModule } from 'src/engine/core-modules/sdk-client/sdk-client.module';
 import { UserWorkspaceModule } from 'src/engine/core-modules/user-workspace/user-workspace.module';
+import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { UpdateWorkspaceMemberEmailJob } from 'src/engine/core-modules/user/jobs/update-workspace-member-email.job';
 import { UserVarsModule } from 'src/engine/core-modules/user/user-vars/user-vars.module';
 import { UserModule } from 'src/engine/core-modules/user/user.module';
@@ -66,6 +67,7 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
       BillingSubscriptionEntity,
       BillingSubscriptionItemEntity,
       BillingProductEntity,
+      UserWorkspaceEntity,
     ]),
     ObjectMetadataModule,
     TypeORMModule,

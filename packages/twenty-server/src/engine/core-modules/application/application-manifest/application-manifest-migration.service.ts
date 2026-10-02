@@ -21,6 +21,7 @@ import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/works
 import { TWENTY_STANDARD_APPLICATION } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-applications';
 import { WorkspaceMigrationBuilderException } from 'src/engine/workspace-manager/workspace-migration/exceptions/workspace-migration-builder-exception';
 import { WorkspaceMigrationValidateBuildAndRunService } from 'src/engine/workspace-manager/workspace-migration/services/workspace-migration-validate-build-and-run-service';
+import { withDestructiveMetadataChangeExecutionContext } from 'src/engine/workspace-manager/workspace-migration/storage/destructive-metadata-change-execution-context.storage';
 import { WorkspaceMigration } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration.type';
 
 @Injectable()
@@ -220,15 +221,30 @@ export class ApplicationManifestMigrationService {
 
     const validateBuildRunStart = performance.now();
     const validateAndBuildResult =
-      await this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromRecord(
+      await withDestructiveMetadataChangeExecutionContext(
         {
-          allFlatEntityOperationRecordByMetadataName,
+          source: 'APPLICATION_MANIFEST',
           workspaceId,
-          isSystemBuild: false,
           applicationUniversalIdentifier:
             ownerFlatApplication.universalIdentifier,
-          dryRun,
         },
+        () =>
+          this.workspaceMigrationValidateBuildAndRunService.validateBuildAndRunWorkspaceMigrationFromRecord(
+            {
+              allFlatEntityOperationRecordByMetadataName,
+              workspaceId,
+              isSystemBuild: false,
+              applicationUniversalIdentifier:
+                ownerFlatApplication.universalIdentifier,
+              dryRun,
+              destructiveChangeAuthorization: {
+                source: 'APPLICATION_MANIFEST',
+                workspaceId,
+                applicationUniversalIdentifier:
+                  ownerFlatApplication.universalIdentifier,
+              },
+            },
+          ),
       );
     const validateBuildRunMs = performance.now() - validateBuildRunStart;
 

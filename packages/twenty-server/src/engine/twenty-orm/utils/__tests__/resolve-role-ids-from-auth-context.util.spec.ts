@@ -41,10 +41,8 @@ describe('resolveRoleIdsFromAuthContext', () => {
     ).toEqual([USER_ROLE_ID, APPLICATION_ROLE_ID]);
   });
 
-  it('should add no bound when the application declares no role', () => {
-    expect(resolve(buildUserContext({ defaultRoleId: null }))).toEqual([
-      USER_ROLE_ID,
-    ]);
+  it('should resolve nothing when a user-bound application has no role', () => {
+    expect(resolve(buildUserContext({ defaultRoleId: null }))).toEqual([]);
   });
 
   it('should resolve the role once when the application declares the user own role', () => {

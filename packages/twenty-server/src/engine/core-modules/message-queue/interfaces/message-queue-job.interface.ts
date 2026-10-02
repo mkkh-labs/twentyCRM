@@ -10,6 +10,8 @@ export interface MessageQueueJob<T = any> {
 
 export interface MessageQueueJobContext {
   abortSignal?: AbortSignal;
+  jobId?: string;
+  jobName?: string;
 }
 
 export interface MessageQueueJobRetryContext<

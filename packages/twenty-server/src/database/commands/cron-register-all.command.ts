@@ -15,6 +15,8 @@ import { CronTriggerCronCommand } from 'src/engine/core-modules/logic-function/l
 import { CheckPublicDomainsValidRecordsCronCommand } from 'src/engine/core-modules/public-domain/crons/commands/check-public-domains-valid-records.cron.command';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { UserSessionCleanupCronCommand } from 'src/engine/core-modules/user-session/crons/commands/user-session-cleanup.cron.command';
+import { OutboxDispatchCronCommand } from 'src/engine/core-modules/transactional-outbox/crons/commands/outbox-dispatch.cron.command';
+import { OutboxRetentionCronCommand } from 'src/engine/core-modules/transactional-outbox/crons/commands/outbox-retention.cron.command';
 import { CheckCustomDomainValidRecordsCronCommand } from 'src/engine/core-modules/workspace/crons/commands/check-custom-domain-valid-records.cron.command';
 import { WebhookSubscriptionRenewalCronCommand } from 'src/modules/connected-account/webhook-subscription-manager/crons/commands/webhook-subscription-renewal.cron.command';
 import { TrashCleanupCronCommand } from 'src/engine/trash-cleanup/commands/trash-cleanup.cron.command';
@@ -75,6 +77,8 @@ export class CronRegisterAllCommand extends CommandRunner {
     private readonly pendingFileCleanupCronCommand: PendingFileCleanupCronCommand,
     private readonly billingReminderCronCommand: BillingReminderCronCommand,
     private readonly userSessionCleanupCronCommand: UserSessionCleanupCronCommand,
+    private readonly outboxDispatchCronCommand: OutboxDispatchCronCommand,
+    private readonly outboxRetentionCronCommand: OutboxRetentionCronCommand,
     private readonly twentyConfigService: TwentyConfigService,
   ) {
     super();
@@ -212,6 +216,14 @@ export class CronRegisterAllCommand extends CommandRunner {
       {
         name: 'UserSessionCleanup',
         command: this.userSessionCleanupCronCommand,
+      },
+      {
+        name: 'OutboxDispatch',
+        command: this.outboxDispatchCronCommand,
+      },
+      {
+        name: 'OutboxRetention',
+        command: this.outboxRetentionCronCommand,
       },
     ];
 

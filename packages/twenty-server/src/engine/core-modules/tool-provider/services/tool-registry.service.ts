@@ -18,7 +18,7 @@ import { findSimilarToolNames } from 'src/engine/core-modules/tool-provider/util
 import { wrapWithErrorHandler } from 'src/engine/core-modules/tool-provider/utils/tool-error.util';
 import { ToolOutputSpillService } from 'src/engine/core-modules/tool/services/tool-output-spill.service';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 
 @Injectable()
 export class ToolRegistryService {
@@ -158,7 +158,7 @@ export class ToolRegistryService {
       userId?: string;
       userWorkspaceId?: string;
       locale?: keyof typeof APP_LOCALES;
-      rolePermissionConfig?: RolePermissionConfig;
+      rolePermissionConfig?: ScopedRolePermissionConfig;
     },
   ): Promise<ToolIndexEntry[]> {
     const context = this.buildContextFromToolContext({
@@ -408,7 +408,7 @@ export class ToolRegistryService {
   private buildContextFromToolContext(
     context: ToolContext,
   ): ToolProviderContext {
-    const rolePermissionConfig: RolePermissionConfig =
+    const rolePermissionConfig: ScopedRolePermissionConfig =
       context.rolePermissionConfig ?? {
         unionOf: [context.roleId],
       };
@@ -424,6 +424,16 @@ export class ToolRegistryService {
       threadId: context.threadId,
       locale: context.locale,
       onCodeExecutionUpdate: context.onCodeExecutionUpdate,
+      serviceAuthorityId: context.serviceAuthorityId,
+      rootCorrelationId: context.rootCorrelationId,
+      jobId: context.jobId,
+      workflowRunId: context.workflowRunId,
+      mutationOrEffectId: context.mutationOrEffectId,
+      approvalId: context.approvalId,
+      automationAllowed: context.automationAllowed,
+      objectMetadataId: context.objectMetadataId,
+      recordIds: context.recordIds,
+      affectedFieldMetadataIds: context.affectedFieldMetadataIds,
     };
   }
 }

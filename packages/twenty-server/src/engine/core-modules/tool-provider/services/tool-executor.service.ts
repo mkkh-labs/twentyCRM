@@ -10,6 +10,7 @@ import { type ObjectRecordGroupBy } from 'src/engine/api/graphql/workspace-query
 import { type ToolProviderContext } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
 
 import { LogicFunctionExecutorService } from 'src/engine/core-modules/logic-function/logic-function-executor/logic-function-executor.service';
+import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
 import { CreateManyRecordsService } from 'src/engine/core-modules/record-crud/services/create-many-records.service';
 import { CreateRecordService } from 'src/engine/core-modules/record-crud/services/create-record.service';
 import { DeleteManyRecordsService } from 'src/engine/core-modules/record-crud/services/delete-many-records.service';
@@ -22,6 +23,7 @@ import { UpsertManyRecordsService } from 'src/engine/core-modules/record-crud/se
 import { type FindRecordsParams } from 'src/engine/core-modules/record-crud/types/find-records-params.type';
 import { TOOL_PROVIDERS } from 'src/engine/core-modules/tool-provider/constants/tool-providers.token';
 import { RecordFilesResolverService } from 'src/engine/core-modules/tool-provider/services/record-files-resolver.service';
+import { ToolPolicyExecutionService } from 'src/engine/core-modules/tool-provider/services/tool-policy-execution.service';
 import { type ToolProvider } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider.interface';
 import { type ToolDescriptor } from 'src/engine/core-modules/tool-provider/types/tool-descriptor.type';
 import { type ToolExecutionRef } from 'src/engine/core-modules/tool-provider/types/tool-execution-ref.type';
@@ -52,6 +54,7 @@ export class ToolExecutorService {
     private readonly logicFunctionExecutorService: LogicFunctionExecutorService,
     private readonly recordFilesResolverService: RecordFilesResolverService,
     private readonly workspaceCacheService: WorkspaceCacheService,
+    private readonly toolPolicyExecutionService: ToolPolicyExecutionService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     @InjectRepository(UserWorkspaceEntity)
@@ -72,8 +75,43 @@ export class ToolExecutorService {
         userWorkspaceRepository: this.userWorkspaceRepository,
         workspaceCacheService: this.workspaceCacheService,
       },
-      (contextWithAuth) =>
-        this.dispatchByExecutionRef(descriptor, safeArgs, contextWithAuth),
+      async (contextWithAuth) =>
+        this.toolPolicyExecutionService.execute({
+          descriptor,
+          arguments: safeArgs,
+          context: contextWithAuth,
+          roleAllowed: await this.isDescriptorCurrentlyAllowed(
+            descriptor,
+            contextWithAuth,
+          ),
+          effect: () =>
+            this.dispatchByExecutionRef(descriptor, safeArgs, contextWithAuth),
+        }),
+    );
+  }
+
+  private async isDescriptorCurrentlyAllowed(
+    descriptor: ToolIndexEntry | ToolDescriptor,
+    context: ToolProviderContext,
+  ): Promise<boolean> {
+    const provider = this.providers.find(
+      (candidate) => candidate.category === descriptor.category,
+    );
+
+    if (!provider || !(await provider.isAvailable(context))) {
+      return false;
+    }
+
+    const currentDescriptors = await provider.generateDescriptors(context, {
+      includeSchemas: false,
+      toolNames: new Set([descriptor.name]),
+    });
+
+    return currentDescriptors.some(
+      (currentDescriptor) =>
+        currentDescriptor.name === descriptor.name &&
+        buildDeterministicDigest(currentDescriptor.executionRef) ===
+          buildDeterministicDigest(descriptor.executionRef),
     );
   }
 

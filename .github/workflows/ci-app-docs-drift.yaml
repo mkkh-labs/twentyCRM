@@ -4,13 +4,14 @@ name: CI App Docs Drift
 # twenty-client-sdk, or the shared manifest types), an agent checks whether the
 # app documentation under packages/twenty-docs/developers/extend/apps is
 # impacted and, only when it is, posts a single sticky comment with its findings.
+# Forks emit a read-only review summary because the Claude GitHub App and OAuth
+# token are repository-scoped and are not a safe pull-request dependency.
 
 on:
   pull_request:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,9 +30,10 @@ jobs:
 
   docs-drift-check:
     needs: changed-files-check
-    # Secrets are unavailable on fork PRs; skip there and on bot PRs.
+    # Keep the privileged agent path on the upstream repository only.
     if: >-
       needs.changed-files-check.outputs.any_changed == 'true' &&
+      github.repository == 'twentyhq/twenty' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.type != 'Bot'
     timeout-minutes: 30
@@ -170,3 +172,53 @@ jobs:
           fi
           echo "::error::Structured verdict present but 'hasDrift' was not a recognizable boolean: $has_drift"
           exit 1
+
+  docs-drift-fork-summary:
+    needs: changed-files-check
+    if: >-
+      needs.changed-files-check.outputs.any_changed == 'true' &&
+      github.repository != 'twentyhq/twenty'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pull request revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Record app documentation review surface
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          merge_base=$(git merge-base HEAD "origin/$BASE_REF")
+          changed_files=$(git diff --name-only "$merge_base" HEAD)
+
+          relevant_source=$(printf '%s\n' "$changed_files" | grep -E \
+            '^(packages/(twenty-sdk|create-twenty-app|twenty-client-sdk)/|packages/twenty-shared/src/(application|types)/)' || true)
+          changed_docs=$(printf '%s\n' "$changed_files" | grep -E \
+            '^packages/twenty-docs/developers/extend/apps/.*\.mdx$' || true)
+
+          {
+            echo '## Fork app documentation review'
+            echo
+            echo 'The upstream semantic drift agent is unavailable in this fork.'
+            echo 'This read-only fallback does not use secrets or claim semantic validation.'
+            echo
+            echo '### Changed app-development source paths'
+            echo '```text'
+            printf '%s\n' "${relevant_source:-None}"
+            echo '```'
+            echo
+            echo '### Changed English app-documentation paths'
+            echo '```text'
+            printf '%s\n' "${changed_docs:-None}"
+            echo '```'
+            echo
+            echo 'A reviewer must resolve any semantic documentation impact before merge.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$changed_docs" ]; then
+            echo "::warning::App-development source changed without an English app-documentation change; manual review is required."
+          fi

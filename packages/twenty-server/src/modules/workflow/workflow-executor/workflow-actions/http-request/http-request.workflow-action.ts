@@ -5,6 +5,9 @@ import { type WorkflowRunStepLog } from 'twenty-shared/workflow';
 import { HttpTool } from 'src/engine/core-modules/tool/tools/http-tool/http-tool';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { type Tool } from 'src/engine/core-modules/tool/types/tool.type';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import {
   WorkflowStepExecutorException,
   WorkflowStepExecutorExceptionCode,
@@ -21,8 +24,18 @@ export class HttpRequestWorkflowAction extends ToolBackedWorkflowAction<Workflow
   constructor(
     private readonly httpTool: HttpTool,
     workflowRunStepLogService: WorkflowRunStepLogWorkspaceService,
+    workflowToolEffectService: WorkflowToolEffectService,
+    workflowExecutionContextService: WorkflowExecutionContextService,
+    permissionsService: PermissionsService,
   ) {
-    super(HttpRequestWorkflowAction.name, workflowRunStepLogService);
+    super(
+      HttpRequestWorkflowAction.name,
+      'http_request',
+      workflowRunStepLogService,
+      workflowToolEffectService,
+      workflowExecutionContextService,
+      permissionsService,
+    );
   }
 
   protected getTool(): Tool {

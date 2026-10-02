@@ -4,6 +4,7 @@ import {
   type DashboardToolContext,
   type DashboardToolDependencies,
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 
 const deleteDashboardWidgetSchema = z.object({
   widgetId: z.string().uuid().describe('The UUID of the widget to delete'),
@@ -18,6 +19,8 @@ export const createDeleteDashboardWidgetTool = (
   inputSchema: deleteDashboardWidgetSchema,
   execute: async (parameters: { widgetId: string }) => {
     try {
+      getRequiredDashboardToolAuthContext(context);
+
       const widget = await deps.pageLayoutWidgetService.findByIdOrThrow({
         id: parameters.widgetId,
         workspaceId: context.workspaceId,

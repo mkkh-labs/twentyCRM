@@ -4,6 +4,7 @@ import {
   type DashboardToolContext,
   type DashboardToolDependencies,
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 
 const addDashboardTabSchema = z.object({
   pageLayoutId: z
@@ -42,6 +43,8 @@ After creating a tab, use add_dashboard_widget with the returned tab ID to add w
     position?: number;
   }) => {
     try {
+      getRequiredDashboardToolAuthContext(context);
+
       const pageLayout = await deps.pageLayoutService.findByIdOrThrow({
         id: parameters.pageLayoutId,
         workspaceId: context.workspaceId,

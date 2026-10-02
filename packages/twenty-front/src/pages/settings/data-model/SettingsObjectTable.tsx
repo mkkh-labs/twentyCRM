@@ -1,6 +1,7 @@
 import { currentWorkspaceState } from '@/auth/states/currentWorkspaceState';
 import { isDDLLockedState } from '@/client-config/states/isDDLLockedState';
 import { useDeleteOneObjectMetadataItem } from '@/object-metadata/hooks/useDeleteOneObjectMetadataItem';
+import { type PreparedMetadataDeletion } from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { useGetIsMetadataItemCustom } from '@/object-metadata/hooks/useGetIsMetadataItemCustom';
 import { useUpdateOneObjectMetadataItem } from '@/object-metadata/hooks/useUpdateOneObjectMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
@@ -16,6 +17,10 @@ import {
   StyledStickyFirstCell,
 } from '@/settings/data-model/object-details/components/SettingsObjectItemTableRowStyledComponents';
 import { SettingsObjectInactiveMenuDropDown } from '@/settings/data-model/objects/components/SettingsObjectInactiveMenuDropDown';
+import { MetadataDeletionImpactSummary } from '@/settings/data-model/components/MetadataDeletionImpactSummary';
+import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
+import { ConfirmationModal } from '@/ui/layout/modal/components/ConfirmationModal';
+import { useModal } from '@/ui/layout/modal/hooks/useModal';
 import { Dropdown } from '@/ui/layout/dropdown/components/Dropdown';
 import { DropdownContent } from '@/ui/layout/dropdown/components/DropdownContent';
 import { DropdownMenuItemsContainer } from '@/ui/layout/dropdown/components/DropdownMenuItemsContainer';
@@ -64,6 +69,9 @@ const StyledScrollableContent = styled.div`
   }
 `;
 
+const DELETE_INACTIVE_OBJECT_MODAL_ID =
+  'delete-inactive-object-confirmation-modal';
+
 export const SettingsObjectTable = ({
   objectMetadataItems,
   withSearchBar = true,
@@ -84,7 +92,15 @@ export const SettingsObjectTable = ({
   const [showSystemObjects, setShowSystemObjects] = useState(true);
   const shouldShowSystemObjects = isAdvancedModeEnabled && showSystemObjects;
 
-  const { deleteOneObjectMetadataItem } = useDeleteOneObjectMetadataItem();
+  const { deleteOneObjectMetadataItem, prepareDeleteOneObjectMetadataItem } =
+    useDeleteOneObjectMetadataItem();
+  const { openModal, closeModal } = useModal();
+  const { enqueueSuccessSnackBar } = useSnackBar();
+  const [pendingDeletion, setPendingDeletion] =
+    useState<EnrichedObjectMetadataItem | null>(null);
+  const [preparedDeletion, setPreparedDeletion] =
+    useState<PreparedMetadataDeletion | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { updateOneObjectMetadataItem } = useUpdateOneObjectMetadataItem();
 
@@ -158,6 +174,45 @@ export const SettingsObjectTable = ({
       shouldShowSystemObjects,
     ],
   );
+
+  const handleRequestDelete = async (
+    objectMetadataItem: EnrichedObjectMetadataItem,
+  ) => {
+    setIsDeleting(true);
+    const preparation = await prepareDeleteOneObjectMetadataItem(
+      objectMetadataItem.id,
+    );
+    setIsDeleting(false);
+
+    if (preparation.status === 'failed') {
+      return;
+    }
+
+    setPendingDeletion(objectMetadataItem);
+    setPreparedDeletion(preparation.response);
+    openModal(DELETE_INACTIVE_OBJECT_MODAL_ID);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (pendingDeletion === null || preparedDeletion === null) {
+      return;
+    }
+
+    setIsDeleting(true);
+    const result = await deleteOneObjectMetadataItem(
+      pendingDeletion.id,
+      preparedDeletion,
+    );
+    setIsDeleting(false);
+    closeModal(DELETE_INACTIVE_OBJECT_MODAL_ID);
+
+    if (result.status === 'successful') {
+      enqueueSuccessSnackBar({ message: t`Object deleted` });
+    }
+
+    setPendingDeletion(null);
+    setPreparedDeletion(null);
+  };
 
   return (
     <>
@@ -287,8 +342,8 @@ export const SettingsObjectTable = ({
                               })
                             }
                             onDelete={() =>
-                              deleteOneObjectMetadataItem(
-                                objectSettingsItem.objectMetadataItem.id,
+                              handleRequestDelete(
+                                objectSettingsItem.objectMetadataItem,
                               )
                             }
                           />
@@ -311,6 +366,25 @@ export const SettingsObjectTable = ({
           </Table>
         </StyledScrollableContent>
       </StyledScrollWrapper>
+      <ConfirmationModal
+        modalInstanceId={DELETE_INACTIVE_OBJECT_MODAL_ID}
+        title={t`Delete ${pendingDeletion?.labelPlural ?? ''} object?`}
+        subtitle={
+          <MetadataDeletionImpactSummary
+            description={t`This will permanently delete the object and all its records. Type "yes" to confirm.`}
+            preparedDeletion={preparedDeletion}
+          />
+        }
+        confirmButtonText={t`Delete`}
+        onConfirmClick={handleConfirmDelete}
+        onClose={() => {
+          setPendingDeletion(null);
+          setPreparedDeletion(null);
+        }}
+        confirmationValue="yes"
+        confirmationPlaceholder="yes"
+        loading={isDeleting}
+      />
     </>
   );
 };

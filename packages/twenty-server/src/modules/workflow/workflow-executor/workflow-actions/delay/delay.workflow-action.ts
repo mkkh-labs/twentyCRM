@@ -104,6 +104,10 @@ export class DelayWorkflowAction implements WorkflowAction {
         workspaceId: runInfo.workspaceId,
         workflowRunId: runInfo.workflowRunId,
         stepId: currentStepId,
+        policySchemaVersion: 1,
+        rootCorrelationId: runInfo.rootCorrelationId ?? runInfo.workflowRunId,
+        originPolicyDecisionId: runInfo.originPolicyDecisionId,
+        approvalId: runInfo.approvalId,
       },
       {
         ...buildRunWorkflowJobOptions(runInfo.workflowRunId),

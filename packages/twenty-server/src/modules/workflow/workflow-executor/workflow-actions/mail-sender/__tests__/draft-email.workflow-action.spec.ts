@@ -1,11 +1,15 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
+import { PermissionFlagType } from 'twenty-shared/constants';
 import { WorkflowActionType } from 'twenty-shared/workflow';
 import { DraftEmailTool } from 'src/engine/core-modules/tool/tools/email-tool/draft-email-tool';
+import { WorkflowToolEffectService } from 'src/engine/core-modules/workflow-reliability/services/workflow-tool-effect.service';
 import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
+import { PermissionsService } from 'src/engine/metadata-modules/permissions/permissions.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
+import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import { DraftEmailWorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/mail-sender/draft-email.workflow-action';
 import { type WorkflowActionSettings } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action-settings.type';
 import { type WorkflowAction } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action.type';
@@ -35,7 +39,7 @@ const MEMBER_ACCOUNT_ID = '20202020-5555-4555-8555-555555555555';
 
 describe('DraftEmailWorkflowAction', () => {
   let action: DraftEmailWorkflowAction;
-  let mockDraftEmailTool: jest.Mocked<Pick<DraftEmailTool, 'execute'>>;
+  let mockDraftEmailTool: jest.Mocked<Pick<DraftEmailTool, 'execute' | 'flag'>>;
   let mockSetStepLog: jest.Mock;
   let connectedAccountRepository: { findOne: jest.Mock };
   let userWorkspaceRepository: { findOne: jest.Mock };
@@ -45,6 +49,7 @@ describe('DraftEmailWorkflowAction', () => {
     jest.clearAllMocks();
 
     mockDraftEmailTool = {
+      flag: PermissionFlagType.SEND_EMAIL_TOOL,
       execute: jest.fn().mockResolvedValue({
         result: { success: true },
         error: undefined,
@@ -60,6 +65,10 @@ describe('DraftEmailWorkflowAction', () => {
         DraftEmailWorkflowAction,
         { provide: DraftEmailTool, useValue: mockDraftEmailTool },
         {
+          provide: WorkflowToolEffectService,
+          useValue: { execute: jest.fn(({ execute }) => execute()) },
+        },
+        {
           provide: WorkflowRunStepLogWorkspaceService,
           useValue: { setStepLog: mockSetStepLog },
         },
@@ -69,6 +78,31 @@ describe('DraftEmailWorkflowAction', () => {
             executeInWorkspaceContext: jest.fn((callback) => callback()),
             getRepository: jest.fn().mockReturnValue(workspaceMemberRepository),
           },
+        },
+        {
+          provide: WorkflowExecutionContextService,
+          useValue: {
+            getExecutionContext: jest.fn().mockResolvedValue({
+              isActingOnBehalfOfUser: true,
+              initiator: {
+                source: 'MANUAL',
+                workspaceMemberId: WORKSPACE_MEMBER_ID,
+              },
+              roleId: 'role-1',
+              rolePermissionConfig: { intersectionOf: ['role-1'] },
+              authContext: {
+                type: 'user',
+                workspace: { id: 'workspace-1' },
+                user: { id: 'user-1' },
+                userWorkspaceId: USER_WORKSPACE_ID,
+                workspaceMemberId: WORKSPACE_MEMBER_ID,
+              },
+            }),
+          },
+        },
+        {
+          provide: PermissionsService,
+          useValue: { hasToolPermission: jest.fn().mockResolvedValue(true) },
         },
         {
           provide: getRepositoryToken(ConnectedAccountEntity),
@@ -101,7 +135,10 @@ describe('DraftEmailWorkflowAction', () => {
 
     expect(mockDraftEmailTool.execute).toHaveBeenCalledWith(
       expect.objectContaining({ body: 'John' }),
-      expect.objectContaining({ workspaceId: 'workspace-1' }),
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        userWorkspaceId: USER_WORKSPACE_ID,
+      }),
     );
   });
 

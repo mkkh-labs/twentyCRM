@@ -9,40 +9,36 @@ import {
   type ObjectRecordUpsertEvent,
 } from 'twenty-shared/database-events';
 import { type ObjectRecord } from 'twenty-shared/types';
-import { isDefined, isNonEmptyArray } from 'twenty-shared/utils';
+import { isDefined, isNonEmptyArray, isValidUuid } from 'twenty-shared/utils';
 import { TRIGGER_STEP_ID } from 'twenty-shared/workflow';
-import { In } from 'typeorm';
 
 import { OnDatabaseBatchEvent } from 'src/engine/api/graphql/graphql-query-runner/decorators/on-database-batch-event.decorator';
 import { DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
-import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
-import { findFlatEntityByIdInFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps.util';
-import { findFlatEntityByIdInFlatEntityMapsOrThrow } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps-or-throw.util';
-import { type FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
-import { buildFieldMapsFromFlatObjectMetadata } from 'src/engine/metadata-modules/flat-field-metadata/utils/build-field-maps-from-flat-object-metadata.util';
-import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
-import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
 import { isCachedDatabaseEventTrigger } from 'src/engine/core-modules/workflow/utils/cached-workflow-automated-trigger.util';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { type WorkspaceEventBatch } from 'src/engine/workspace-event-emitter/types/workspace-event-batch.type';
-import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { evaluateStepFilters } from 'src/modules/workflow/workflow-executor/workflow-actions/filter/utils/evaluate-step-filters.util';
 import {
   type AutomatedTriggerSettings,
   type BaseDatabaseEventTriggerSettings,
   type UpdateEventTriggerSettings,
 } from 'src/modules/workflow/workflow-trigger/automated-trigger/constants/automated-trigger-settings';
-import {
-  WorkflowTriggerJob,
-  type WorkflowTriggerJobData,
-} from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
+import { WorkflowTriggerJob } from 'src/modules/workflow/workflow-trigger/jobs/workflow-trigger.job';
+import { WorkflowTriggerProvenanceService } from 'src/modules/workflow/workflow-trigger/services/workflow-trigger-provenance.service';
+import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
+import { type WorkflowTriggerJobData } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
+import { buildWorkflowDatabaseEventReference } from 'src/modules/workflow/workflow-trigger/utils/build-workflow-database-event-reference.util';
+import { validateWorkflowDatabaseEventReference } from 'src/modules/workflow/workflow-trigger/utils/validate-workflow-database-event-reference.util';
 
 type DatabaseEventTriggerListener = {
   workflowId: string;
+  workflowVersionId: string;
   settings: AutomatedTriggerSettings;
 };
 
@@ -59,11 +55,13 @@ export class WorkflowDatabaseEventTriggerListener {
   );
 
   constructor(
-    private readonly workspaceOrmManager: WorkspaceOrmManager,
     @InjectMessageQueue(MessageQueue.workflowQueue)
     private readonly messageQueueService: MessageQueueService,
-    private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
     private readonly workspaceCacheService: WorkspaceCacheService,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
+    private readonly workflowServiceAuthority: WorkflowServiceAuthorityWorkspaceService,
+    private readonly workflowTriggerProvenanceService: WorkflowTriggerProvenanceService,
   ) {}
 
   @OnDatabaseBatchEvent('*', DatabaseEventAction.CREATED)
@@ -74,11 +72,8 @@ export class WorkflowDatabaseEventTriggerListener {
       return;
     }
 
-    const clonedPayload = structuredClone(payload);
-
-    await this.enrichCreatedEvent(clonedPayload);
     await this.handleEvent({
-      payload: clonedPayload,
+      payload,
       action: DatabaseEventAction.CREATED,
     });
   }
@@ -91,12 +86,8 @@ export class WorkflowDatabaseEventTriggerListener {
       return;
     }
 
-    const clonedPayload = structuredClone(payload);
-
-    await this.enrichUpdatedEvent(clonedPayload);
-
     await this.handleEvent({
-      payload: clonedPayload,
+      payload,
       action: DatabaseEventAction.UPDATED,
     });
   }
@@ -109,11 +100,8 @@ export class WorkflowDatabaseEventTriggerListener {
       return;
     }
 
-    const clonedPayload = structuredClone(payload);
-
-    await this.enrichDeletedEvent(clonedPayload);
     await this.handleEvent({
-      payload: clonedPayload,
+      payload,
       action: DatabaseEventAction.DELETED,
     });
   }
@@ -126,11 +114,8 @@ export class WorkflowDatabaseEventTriggerListener {
       return;
     }
 
-    const clonedPayload = structuredClone(payload);
-
-    await this.enrichDestroyedEvent(clonedPayload);
     await this.handleEvent({
-      payload: clonedPayload,
+      payload,
       action: DatabaseEventAction.DESTROYED,
     });
   }
@@ -143,179 +128,10 @@ export class WorkflowDatabaseEventTriggerListener {
       return;
     }
 
-    const clonedPayload = structuredClone(payload);
-
     await this.handleEvent({
-      payload: clonedPayload,
+      payload,
       action: DatabaseEventAction.UPSERTED,
     });
-  }
-
-  private async enrichCreatedEvent(
-    payload: WorkspaceEventBatch<ObjectRecordCreateEvent>,
-  ) {
-    const workspaceId = payload.workspaceId;
-    const {
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    } = await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
-      payload.objectMetadata.nameSingular,
-      workspaceId,
-    );
-
-    await this.enrichRecordsWithRelations({
-      records: payload.events.map((event) => event.properties.after),
-      workspaceId,
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    });
-  }
-
-  private async enrichUpdatedEvent(
-    payload: WorkspaceEventBatch<ObjectRecordUpdateEvent>,
-  ) {
-    const workspaceId = payload.workspaceId;
-    const {
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    } = await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
-      payload.objectMetadata.nameSingular,
-      workspaceId,
-    );
-
-    await this.enrichRecordsWithRelations({
-      records: payload.events.map((event) => event.properties.before),
-      workspaceId,
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    });
-    await this.enrichRecordsWithRelations({
-      records: payload.events.map((event) => event.properties.after),
-      workspaceId,
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    });
-  }
-
-  private async enrichDeletedEvent(
-    payload: WorkspaceEventBatch<ObjectRecordDeleteEvent>,
-  ) {
-    const workspaceId = payload.workspaceId;
-    const {
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    } = await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
-      payload.objectMetadata.nameSingular,
-      workspaceId,
-    );
-
-    await this.enrichRecordsWithRelations({
-      records: payload.events.map((event) => event.properties.before),
-      workspaceId,
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    });
-  }
-
-  private async enrichDestroyedEvent(
-    payload: WorkspaceEventBatch<ObjectRecordDestroyEvent>,
-  ) {
-    const workspaceId = payload.workspaceId;
-    const {
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    } = await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
-      payload.objectMetadata.nameSingular,
-      workspaceId,
-    );
-
-    await this.enrichRecordsWithRelations({
-      records: payload.events.map((event) => event.properties.before),
-      workspaceId,
-      flatObjectMetadata,
-      flatObjectMetadataMaps,
-      flatFieldMetadataMaps,
-    });
-  }
-
-  private async enrichRecordsWithRelations({
-    records,
-    workspaceId,
-    flatObjectMetadata,
-    flatObjectMetadataMaps,
-    flatFieldMetadataMaps,
-  }: {
-    records: Partial<ObjectRecord>[];
-    workspaceId: string;
-    flatObjectMetadata: FlatObjectMetadata;
-    flatObjectMetadataMaps: FlatEntityMaps<FlatObjectMetadata>;
-    flatFieldMetadataMaps: FlatEntityMaps<FlatFieldMetadata>;
-  }) {
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
-      const { fieldIdByJoinColumnName } = buildFieldMapsFromFlatObjectMetadata(
-        flatFieldMetadataMaps,
-        flatObjectMetadata,
-      );
-
-      for (const [joinColumnName, joinFieldId] of Object.entries(
-        fieldIdByJoinColumnName,
-      )) {
-        const joinField = findFlatEntityByIdInFlatEntityMapsOrThrow({
-          flatEntityMaps: flatFieldMetadataMaps,
-          flatEntityId: joinFieldId,
-        });
-
-        const joinRecordIds = records
-          .map((record) => record[joinColumnName])
-          .filter(isDefined);
-
-        if (joinRecordIds.length === 0) {
-          continue;
-        }
-
-        const relatedObjectMetadataId =
-          joinField.relationTargetObjectMetadataId;
-
-        if (!isDefined(relatedObjectMetadataId)) {
-          continue;
-        }
-
-        const relatedObjectMetadataNameSingular =
-          findFlatEntityByIdInFlatEntityMaps({
-            flatEntityId: relatedObjectMetadataId,
-            flatEntityMaps: flatObjectMetadataMaps,
-          })?.nameSingular;
-
-        if (!isDefined(relatedObjectMetadataNameSingular)) {
-          continue;
-        }
-
-        const relatedObjectRepository = this.workspaceOrmManager.getRepository(
-          relatedObjectMetadataNameSingular,
-          { shouldBypassPermissionChecks: true },
-        );
-
-        const relatedRecords = await relatedObjectRepository.find({
-          where: { id: In(joinRecordIds) },
-        });
-
-        for (const record of records) {
-          record[joinField.name] = relatedRecords.find(
-            (relatedRecord) => relatedRecord.id === record[joinColumnName],
-          );
-        }
-      }
-    }, authContext);
   }
 
   private async shouldIgnoreEvent(
@@ -324,11 +140,17 @@ export class WorkflowDatabaseEventTriggerListener {
     const workspaceId = payload.workspaceId;
     const databaseEventName = payload.name;
 
-    if (!workspaceId || !databaseEventName) {
+    if (
+      !workspaceId ||
+      !databaseEventName ||
+      payload.objectMetadata?.workspaceId !== workspaceId
+    ) {
       this.logger.error(
-        `Missing workspaceId or eventName in payload ${JSON.stringify(
-          payload,
-        )}`,
+        `Denied database event with missing routing identity: workspacePresent=${Boolean(
+          workspaceId,
+        )} eventNamePresent=${Boolean(databaseEventName)} workspaceBound=${
+          payload.objectMetadata?.workspaceId === workspaceId
+        } eventCount=${payload.events?.length ?? 0}`,
       );
 
       return true;
@@ -352,27 +174,155 @@ export class WorkflowDatabaseEventTriggerListener {
       databaseEventName,
     );
 
-    for (const eventListener of eventListeners) {
+    if (eventListeners.length === 0) {
+      return;
+    }
+
+    let authority: Awaited<
+      ReturnType<WorkflowServiceAuthorityWorkspaceService['resolve']>
+    >;
+
+    try {
+      const { flatObjectMetadata } =
+        await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
+          payload.objectMetadata.nameSingular,
+          workspaceId,
+        );
+
+      if (flatObjectMetadata.id !== payload.objectMetadata.id) {
+        this.logger.warn(
+          `Denied workflow trigger for stale object metadata ${payload.objectMetadata.id}.`,
+        );
+
+        return;
+      }
+
+      authority = await this.workflowServiceAuthority.resolve(workspaceId);
+    } catch (error) {
+      this.logger.warn(
+        `Denied workflow trigger ingress because scoped authority could not be resolved: ${
+          error instanceof Error ? error.name : 'UnknownError'
+        }`,
+      );
+
+      return;
+    }
+
+    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
+      const recordRepository =
+        this.workspaceOrmManager.getRepository<ObjectRecord>(
+          payload.objectMetadata.nameSingular,
+          authority.rolePermissionConfig,
+        );
+
       for (const eventPayload of payload.events) {
-        const shouldTriggerJob = this.shouldTriggerJob({
-          eventPayload,
-          eventListener,
-          action,
+        if (!isValidUuid(eventPayload.recordId)) {
+          this.logger.warn(
+            'Denied workflow trigger with malformed record identity.',
+          );
+
+          continue;
+        }
+
+        const listenersMatchingWatchedFields = eventListeners.filter(
+          (eventListener) =>
+            this.eventMatchesWatchedFields({
+              eventPayload,
+              eventListener,
+              action,
+            }),
+        );
+
+        if (listenersMatchingWatchedFields.length === 0) {
+          continue;
+        }
+
+        const currentRecord = await recordRepository.findOneBy({
+          id: eventPayload.recordId,
         });
 
-        if (shouldTriggerJob) {
+        if (!isDefined(currentRecord)) {
+          this.logger.warn(
+            `Denied workflow trigger because record ${eventPayload.recordId} is unavailable to scoped authority.`,
+          );
+
+          continue;
+        }
+
+        const scopedEventPayload = {
+          recordId: eventPayload.recordId,
+          properties: {
+            after: currentRecord,
+            updatedFields:
+              'updatedFields' in eventPayload.properties
+                ? (eventPayload.properties.updatedFields ?? [])
+                : [],
+          },
+        } as ObjectRecordEvent;
+
+        for (const eventListener of listenersMatchingWatchedFields) {
+          const shouldTriggerJob = this.eventMatchesRecordFilter({
+            eventPayload: scopedEventPayload,
+            eventListener,
+          });
+
+          if (!shouldTriggerJob) {
+            continue;
+          }
+
+          if (
+            action === DatabaseEventAction.DELETED ||
+            action === DatabaseEventAction.DESTROYED
+          ) {
+            this.logger.warn(
+              `Denied workflow trigger ${eventListener.workflowId}: deleted-record snapshots require scoped enqueue-time authority.`,
+            );
+
+            continue;
+          }
+
+          const databaseEvent = buildWorkflowDatabaseEventReference({
+            workspaceId,
+            workflowId: eventListener.workflowId,
+            workflowVersionId: eventListener.workflowVersionId,
+            triggerConfigurationDigest: buildDeterministicDigest(
+              eventListener.settings,
+            ),
+            objectMetadataId: payload.objectMetadata.id,
+            objectNameSingular: payload.objectMetadata.nameSingular,
+            action,
+            event: scopedEventPayload,
+            signReference: (reference) =>
+              this.workflowTriggerProvenanceService.sign(reference),
+          });
+
+          if (
+            !validateWorkflowDatabaseEventReference(
+              databaseEvent,
+              workspaceId,
+              eventListener.workflowId,
+            )
+          ) {
+            this.logger.warn(
+              `Denied malformed workflow trigger reference for workflow ${eventListener.workflowId}.`,
+            );
+
+            continue;
+          }
+
           await this.messageQueueService.add<WorkflowTriggerJobData>(
             WorkflowTriggerJob.name,
             {
+              triggerType: 'database-event',
               workspaceId,
               workflowId: eventListener.workflowId,
-              payload: eventPayload,
+              databaseEvent,
             },
-            { retryLimit: 3 },
+            { id: databaseEvent.idempotencyKey, retryLimit: 3 },
           );
         }
       }
-    }
+    }, authority.authContext);
   }
 
   private async getDatabaseEventListeners(
@@ -388,17 +338,6 @@ export class WorkflowDatabaseEventTriggerListener {
       (trigger) =>
         isCachedDatabaseEventTrigger(trigger) &&
         trigger.settings.eventName === databaseEventName,
-    );
-  }
-
-  private shouldTriggerJob({
-    eventPayload,
-    eventListener,
-    action,
-  }: TriggerEvaluationArgs) {
-    return (
-      this.eventMatchesWatchedFields({ eventPayload, eventListener, action }) &&
-      this.eventMatchesRecordFilter({ eventPayload, eventListener })
     );
   }
 

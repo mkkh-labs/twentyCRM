@@ -6,12 +6,12 @@ import { WidgetConfigurationType } from 'src/engine/metadata-modules/page-layout
 import { WidgetType } from 'twenty-shared/types';
 import { findActiveFlatFieldMetadataById } from 'src/engine/metadata-modules/page-layout-widget/utils/find-active-flat-field-metadata-by-id.util';
 import { isChartReferencingFieldInConfiguration } from 'src/engine/metadata-modules/page-layout-widget/utils/is-chart-referencing-field-in-configuration.util';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   type DashboardToolContext,
   type DashboardToolDependencies,
 } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
 import { buildResolvedGroupBy } from 'src/modules/dashboard/tools/utils/build-resolved-group-by.util';
+import { getRequiredDashboardToolAuthContext } from 'src/modules/dashboard/tools/utils/get-required-dashboard-tool-auth-context.util';
 
 const getDashboardSchema = z.object({
   dashboardId: z.string().uuid().describe('The UUID of the dashboard to fetch'),
@@ -29,7 +29,7 @@ export const createGetDashboardTool = (
   inputSchema: getDashboardSchema,
   execute: async (parameters: { dashboardId: string }) => {
     try {
-      const authContext = buildSystemAuthContext(context.workspaceId);
+      const authContext = getRequiredDashboardToolAuthContext(context);
       const { flatFieldMetadataMaps } =
         await deps.flatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps(
           {
@@ -70,9 +70,10 @@ export const createGetDashboardTool = (
 
       const dashboard =
         await deps.workspaceOrmManager.executeInWorkspaceContext(async () => {
-          const repo = deps.workspaceOrmManager.getRepository('dashboard', {
-            shouldBypassPermissionChecks: true,
-          });
+          const repo = deps.workspaceOrmManager.getRepository(
+            'dashboard',
+            context.rolePermissionConfig,
+          );
 
           return repo.findOne({ where: { id: parameters.dashboardId } });
         }, authContext);

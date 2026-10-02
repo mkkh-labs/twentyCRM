@@ -6,11 +6,13 @@ import { isDefined } from 'twenty-shared/utils';
 import { StepStatus } from 'twenty-shared/workflow';
 
 import { BillingUsageService } from 'src/engine/core-modules/billing/services/billing-usage.service';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import {
   WorkflowVersionStepException,
   WorkflowVersionStepExceptionCode,
@@ -58,12 +60,16 @@ export class WorkflowRunnerWorkspaceService {
     payload,
     source,
     workflowRunId: initialWorkflowRunId,
+    authContext,
+    rolePermissionConfig,
   }: {
     workspaceId: string;
     workflowVersionId: string;
     payload: object;
     source: ActorMetadata;
     workflowRunId?: string;
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
     const canFeatureBeUsed =
       await this.billingUsageService.canFeatureBeUsed(workspaceId);
@@ -78,6 +84,8 @@ export class WorkflowRunnerWorkspaceService {
       await this.workflowCommonWorkspaceService.getWorkflowVersionOrFail({
         workspaceId,
         workflowVersionId,
+        authContext,
+        rolePermissionConfig,
       });
 
     const isManualTrigger =
@@ -93,6 +101,8 @@ export class WorkflowRunnerWorkspaceService {
         initialWorkflowRunId,
         source,
         payload,
+        authContext,
+        rolePermissionConfig,
       });
     }
 
@@ -103,6 +113,8 @@ export class WorkflowRunnerWorkspaceService {
         initialWorkflowRunId,
         source,
         payload,
+        authContext,
+        rolePermissionConfig,
       });
     }
 
@@ -112,6 +124,8 @@ export class WorkflowRunnerWorkspaceService {
       initialWorkflowRunId,
       source,
       payload,
+      authContext,
+      rolePermissionConfig,
     });
   }
 
@@ -129,6 +143,8 @@ export class WorkflowRunnerWorkspaceService {
       {
         workspaceId,
         workflowRunId,
+        policySchemaVersion: 1,
+        rootCorrelationId: workflowRunId,
         lastExecutedStepId,
       },
       buildRunWorkflowJobOptions(workflowRunId),
@@ -350,6 +366,8 @@ export class WorkflowRunnerWorkspaceService {
         {
           workspaceId,
           workflowRunId,
+          policySchemaVersion: 1,
+          rootCorrelationId: workflowRunId,
           stepIdsToRetry: stepIdsToRun,
         },
         buildRunWorkflowJobOptions(workflowRunId),
@@ -376,6 +394,114 @@ export class WorkflowRunnerWorkspaceService {
     };
   }
 
+  async retryWorkflowStepWithApproval({
+    workspaceId,
+    workflowRunId,
+    workflowStepId,
+    approvalId,
+    rootCorrelationId,
+    originPolicyDecisionId,
+    authContext,
+    rolePermissionConfig,
+  }: {
+    workspaceId: string;
+    workflowRunId: string;
+    workflowStepId: string;
+    approvalId: string;
+    rootCorrelationId: string;
+    originPolicyDecisionId: string;
+    authContext?: WorkspaceAuthContext;
+    rolePermissionConfig?: ScopedRolePermissionConfig;
+  }) {
+    const workflowRun =
+      await this.workflowRunWorkspaceService.getWorkflowRunOrFail({
+        workflowRunId,
+        workspaceId,
+        authContext,
+        rolePermissionConfig,
+      });
+
+    if (workflowRun.status !== WorkflowRunStatus.FAILED) {
+      return { id: workflowRun.id, status: workflowRun.status };
+    }
+
+    if (!isDefined(workflowRun.state)) {
+      throw new WorkflowRunException(
+        'Cannot retry a workflow run without state',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
+    const step = workflowRun.state.flow.steps.find(
+      (candidate) => candidate.id === workflowStepId,
+    );
+    const stepInfo = workflowRun.state.stepInfos[workflowStepId];
+
+    if (
+      !isDefined(step) ||
+      stepInfo?.status !== StepStatus.FAILED ||
+      !stepInfo.error?.includes('APPROVAL_REQUIRED')
+    ) {
+      throw new WorkflowRunException(
+        'Workflow step is not awaiting approval',
+        WorkflowRunExceptionCode.WORKFLOW_RUN_INVALID,
+      );
+    }
+
+    const retryState = {
+      ...workflowRun.state,
+      stepInfos: {
+        ...workflowRun.state.stepInfos,
+        [workflowStepId]: { status: StepStatus.NOT_STARTED },
+      },
+      workflowRunError: undefined,
+    };
+
+    await this.workflowRunWorkspaceService.updateWorkflowRun({
+      workflowRunId,
+      workspaceId,
+      authContext,
+      rolePermissionConfig,
+      partialUpdate: {
+        status: WorkflowRunStatus.RUNNING,
+        endedAt: null,
+        state: retryState,
+      },
+    });
+
+    try {
+      await this.messageQueueService.add<RunWorkflowJobData>(
+        RunWorkflowJob.name,
+        {
+          workspaceId,
+          workflowRunId,
+          policySchemaVersion: 1,
+          rootCorrelationId,
+          originPolicyDecisionId,
+          approvalId,
+          stepIdsToRetry: [workflowStepId],
+        },
+        buildRunWorkflowJobOptions(workflowRunId),
+      );
+    } catch (error) {
+      await this.workflowRunWorkspaceService.updateWorkflowRun({
+        workflowRunId,
+        workspaceId,
+        authContext,
+        rolePermissionConfig,
+        partialUpdate: {
+          status: workflowRun.status,
+          endedAt: workflowRun.endedAt,
+          state: workflowRun.state,
+        },
+      });
+
+      throw error;
+    }
+
+    return { id: workflowRun.id, status: WorkflowRunStatus.RUNNING };
+  }
+
   private async checkHardThrottleLimit(workspaceId: string): Promise<boolean> {
     try {
       await this.workflowThrottlingWorkspaceService.throttleOrThrowIfHardLimitReached(
@@ -399,12 +525,16 @@ export class WorkflowRunnerWorkspaceService {
     initialWorkflowRunId,
     source,
     payload,
+    authContext,
+    rolePermissionConfig,
   }: {
     workspaceId: string;
     workflowVersionId: string;
     initialWorkflowRunId?: string;
     source: ActorMetadata;
     payload: object;
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
     const workflowRunId =
       await this.workflowRunWorkspaceService.createWorkflowRun({
@@ -415,6 +545,8 @@ export class WorkflowRunnerWorkspaceService {
         triggerPayload: payload,
         error: 'Throttle limit reached',
         workspaceId,
+        authContext,
+        rolePermissionConfig,
       });
 
     return { workflowRunId };
@@ -426,12 +558,16 @@ export class WorkflowRunnerWorkspaceService {
     initialWorkflowRunId,
     source,
     payload,
+    authContext,
+    rolePermissionConfig,
   }: {
     workspaceId: string;
     workflowVersionId: string;
     initialWorkflowRunId?: string;
     source: ActorMetadata;
     payload: object;
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
     const workflowRunId =
       await this.workflowRunWorkspaceService.createWorkflowRun({
@@ -441,6 +577,8 @@ export class WorkflowRunnerWorkspaceService {
         status: WorkflowRunStatus.ENQUEUED,
         triggerPayload: payload,
         workspaceId,
+        authContext,
+        rolePermissionConfig,
       });
 
     await this.messageQueueService.add<RunWorkflowJobData>(
@@ -448,6 +586,8 @@ export class WorkflowRunnerWorkspaceService {
       {
         workspaceId,
         workflowRunId,
+        policySchemaVersion: 1,
+        rootCorrelationId: workflowRunId,
       },
       buildRunWorkflowJobOptions(workflowRunId),
     );
@@ -461,12 +601,16 @@ export class WorkflowRunnerWorkspaceService {
     initialWorkflowRunId,
     source,
     payload,
+    authContext,
+    rolePermissionConfig,
   }: {
     workspaceId: string;
     workflowVersionId: string;
     initialWorkflowRunId?: string;
     source: ActorMetadata;
     payload: object;
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
     const workflowRunId =
       await this.workflowRunWorkspaceService.createWorkflowRun({
@@ -476,6 +620,8 @@ export class WorkflowRunnerWorkspaceService {
         status: WorkflowRunStatus.NOT_STARTED,
         triggerPayload: payload,
         workspaceId,
+        authContext,
+        rolePermissionConfig,
       });
 
     await this.workflowThrottlingWorkspaceService.increaseWorkflowRunNotStartedCount(

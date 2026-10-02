@@ -399,6 +399,7 @@ export type FeatureFlag = {
 };
 
 export enum FeatureFlagKey {
+  IS_AGENT_WRITES_ENABLED = 'IS_AGENT_WRITES_ENABLED',
   IS_API_RATE_LIMIT_V2_ENABLED = 'IS_API_RATE_LIMIT_V2_ENABLED',
   IS_APP_CLAIMING_ENABLED = 'IS_APP_CLAIMING_ENABLED',
   IS_EMAIL_GROUP_ENABLED = 'IS_EMAIL_GROUP_ENABLED',
@@ -424,6 +425,7 @@ export enum HealthIndicatorId {
   app = 'app',
   connectedAccount = 'connectedAccount',
   database = 'database',
+  idealCrm = 'idealCrm',
   redis = 'redis',
   worker = 'worker'
 }

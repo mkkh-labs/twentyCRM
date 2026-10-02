@@ -12,6 +12,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  Min,
   ValidateIf,
   type ValidationError,
   validateSync,
@@ -24,6 +25,7 @@ import { isDefined } from 'twenty-shared/utils';
 import { type LoggerOptions } from 'typeorm/logger/LoggerOptions';
 
 import { LogicFunctionDriverType } from 'src/engine/core-modules/logic-function/logic-function-drivers/interfaces/logic-function-driver.interface';
+import { type LogicFunctionLambdaEgressMode } from 'src/engine/core-modules/logic-function/logic-function-drivers/types/logic-function-lambda-egress-mode.type';
 import { type AwsRegion } from 'src/engine/core-modules/twenty-config/interfaces/aws-region.interface';
 import { NodeEnvironment } from 'src/engine/core-modules/twenty-config/interfaces/node-environment.interface';
 import { SupportDriver } from 'src/engine/core-modules/twenty-config/interfaces/support.interface';
@@ -69,6 +71,14 @@ import {
 } from 'src/engine/metadata-modules/ai/ai-models/utils/load-default-model-preferences.util';
 
 export class ConfigVariables {
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description: 'Global kill switch for AI agent write operations',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  AGENT_WRITES_ENABLED = false;
+
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description: 'Enable or disable password authentication for users',
@@ -735,6 +745,17 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description: 'Reserved concurrency for each AWS Lambda logic function',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @Min(1)
+  LOGIC_FUNCTION_LAMBDA_RESERVED_CONCURRENCY = 1;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
     description: 'Role to assume when hosting lambdas in dedicated AWS account',
     type: ConfigVariableType.STRING,
   })
@@ -791,6 +812,40 @@ export class ConfigVariables {
   @IsOptional()
   @IsAWSRegion()
   LOGIC_FUNCTION_LAMBDA_LAYER_BUCKET_REGION?: AwsRegion;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description: 'Network-egress boundary for AWS Lambda logic functions',
+    type: ConfigVariableType.ENUM,
+    options: ['UNRESTRICTED', 'VPC_CONTROLLED'],
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  @IsIn(['UNRESTRICTED', 'VPC_CONTROLLED'])
+  @CastToUpperSnakeCase()
+  LOGIC_FUNCTION_LAMBDA_EGRESS_MODE: LogicFunctionLambdaEgressMode =
+    'UNRESTRICTED';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description: 'Subnet identifiers for VPC-controlled Lambda execution',
+    type: ConfigVariableType.ARRAY,
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  LOGIC_FUNCTION_LAMBDA_SUBNET_IDS: string[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description:
+      'Security-group identifiers for VPC-controlled Lambda execution',
+    type: ConfigVariableType.ARRAY,
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  LOGIC_FUNCTION_LAMBDA_SECURITY_GROUP_IDS: string[] = [];
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,

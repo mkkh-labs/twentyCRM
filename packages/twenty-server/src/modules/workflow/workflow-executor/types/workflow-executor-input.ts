@@ -1,4 +1,11 @@
-export type WorkflowExecutorInput = {
+export type WorkflowPolicyTransportContext = {
+  jobId: string;
+  rootCorrelationId: string;
+  originPolicyDecisionId?: string;
+  approvalId?: string;
+};
+
+export type WorkflowExecutorInput = WorkflowPolicyTransportContext & {
   stepIds: string[];
   workflowRunId: string;
   workspaceId: string;
@@ -6,7 +13,7 @@ export type WorkflowExecutorInput = {
   executedStepsCount?: number;
 };
 
-export type WorkflowBranchExecutorInput = {
+export type WorkflowBranchExecutorInput = WorkflowPolicyTransportContext & {
   stepId: string;
   attemptCount?: number;
   workflowRunId: string;

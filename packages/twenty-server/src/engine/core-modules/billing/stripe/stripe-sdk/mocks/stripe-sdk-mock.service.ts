@@ -9,7 +9,19 @@ import { type StripeSDKService } from 'src/engine/core-modules/billing/stripe/st
 
 @Injectable()
 export class StripeSDKMockService implements StripeSDKService {
+  private readonly stripeByApiKey = new Map<string, StripeSDKMock>();
+
   getStripe(stripeApiKey: string) {
-    return new StripeSDKMock(stripeApiKey) as unknown as Stripe;
+    const existingStripe = this.stripeByApiKey.get(stripeApiKey);
+
+    if (existingStripe) {
+      return existingStripe as unknown as Stripe;
+    }
+
+    const stripe = new StripeSDKMock(stripeApiKey);
+
+    this.stripeByApiKey.set(stripeApiKey, stripe);
+
+    return stripe as unknown as Stripe;
   }
 }

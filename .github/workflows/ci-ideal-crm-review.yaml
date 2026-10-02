@@ -1,0 +1,54 @@
+name: Ideal CRM Review
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/actions/yarn-install/action.yaml'
+      - '.github/workflows/ci-ideal-crm-review.yaml'
+      - 'packages/twenty-server/**'
+      - 'packages/twenty-shared/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ideal-crm-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-contract:
+    name: Server contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout untrusted pull request revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install dependencies without lifecycle scripts
+        uses: ./.github/actions/yarn-install
+        with:
+          node-version: '24.16.0'
+
+      - name: Build shared contracts
+        run: yarn nx build twenty-shared --skip-nx-cache
+
+      - name: Build server
+        run: yarn nx build twenty-server --skip-nx-cache
+
+      - name: Typecheck server
+        run: ./node_modules/.bin/tsgo -p packages/twenty-server/tsconfig.json --noEmit
+
+      - name: Run focused authority and outbox tests
+        run: |
+          ./node_modules/.bin/jest \
+            packages/twenty-server/src/engine/core-modules/application/__tests__/application.service.spec.ts \
+            packages/twenty-server/src/engine/core-modules/transactional-outbox/__tests__/outbox-event-delivery.job.spec.ts \
+            packages/twenty-server/src/engine/core-modules/transactional-outbox/__tests__/outbox-retention.spec.ts \
+            packages/twenty-server/src/engine/core-modules/transactional-outbox/services/__tests__/outbox-event-consumer.service.spec.ts \
+            packages/twenty-server/src/engine/core-modules/admin-panel/__tests__/ideal-crm.health.spec.ts \
+            packages/twenty-server/src/modules/workflow/workflow-trigger/jobs/__tests__/workflow-trigger.job.spec.ts \
+            --config=packages/twenty-server/jest.config.mjs \
+            --runInBand

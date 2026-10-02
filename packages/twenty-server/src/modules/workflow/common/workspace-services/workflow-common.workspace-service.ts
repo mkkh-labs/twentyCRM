@@ -4,6 +4,7 @@ import { isDefined, isValidUuid } from 'twenty-shared/utils';
 import { In } from 'typeorm';
 
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
 import { WorkflowVersionCoreSyncService } from 'src/engine/core-modules/workflow/services/workflow-version-core-sync.service';
 import { CommandMenuItemService } from 'src/engine/metadata-modules/command-menu-item/command-menu-item.service';
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
@@ -17,7 +18,7 @@ import { LogicFunctionFromSourceService } from 'src/engine/metadata-modules/logi
 import { type FlatLogicFunction } from 'src/engine/metadata-modules/logic-function/types/flat-logic-function.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { type WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace-repository';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import {
   type ObjectMetadataInfo,
   WorkflowMetadataReadService,
@@ -56,9 +57,13 @@ export class WorkflowCommonWorkspaceService {
   async getWorkflowVersionOrFail({
     workspaceId,
     workflowVersionId,
+    rolePermissionConfig,
+    authContext: suppliedAuthContext,
   }: {
     workspaceId: string;
     workflowVersionId: string;
+    rolePermissionConfig?: ScopedRolePermissionConfig;
+    authContext?: WorkspaceAuthContext;
   }): Promise<WorkflowVersionWorkspaceEntity> {
     if (!workflowVersionId) {
       throw new WorkflowTriggerException(
@@ -67,13 +72,29 @@ export class WorkflowCommonWorkspaceService {
       );
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    const authContext = suppliedAuthContext ?? getWorkspaceAuthContext();
+    const resolvedRolePermissionConfig =
+      rolePermissionConfig ??
+      (await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      ));
+
+    if (
+      authContext.workspace.id !== workspaceId ||
+      resolvedRolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in resolvedRolePermissionConfig
+    ) {
+      throw new WorkflowTriggerException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        WorkflowTriggerExceptionCode.FORBIDDEN,
+      );
+    }
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowVersionRepository =
         this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
           'workflowVersion',
-          { shouldBypassPermissionChecks: true },
+          resolvedRolePermissionConfig,
         );
 
       const workflowVersion = await workflowVersionRepository.findOne({
@@ -141,12 +162,17 @@ export class WorkflowCommonWorkspaceService {
       return;
     }
 
+    const { rolePermissionConfig } = await this.resolveScopedAuthority(
+      workspaceId,
+      authContext,
+    );
+
     const workflows = await this.workspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const workflowRepository =
           this.workspaceOrmManager.getRepository<WorkflowWorkspaceEntity>(
             'workflow',
-            { shouldBypassPermissionChecks: true },
+            rolePermissionConfig,
           );
 
         return workflowRepository.find({
@@ -240,25 +266,26 @@ export class WorkflowCommonWorkspaceService {
     workspaceId: string;
     operation: 'restore' | 'delete' | 'destroy';
   }): Promise<void> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId);
 
     await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowVersionRepository =
         this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
           'workflowVersion',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const workflowRunRepository =
         this.workspaceOrmManager.getRepository<WorkflowRunWorkspaceEntity>(
           'workflowRun',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const workflowAutomatedTriggerRepository =
         this.workspaceOrmManager.getRepository<WorkflowAutomatedTriggerWorkspaceEntity>(
           'workflowAutomatedTrigger',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       for (const workflowId of workflowIds) {
@@ -308,6 +335,7 @@ export class WorkflowCommonWorkspaceService {
           workflowId,
           workspaceId,
           operation,
+          rolePermissionConfig,
         });
 
         await this.handleLogicFunctionSubEntities({
@@ -325,11 +353,13 @@ export class WorkflowCommonWorkspaceService {
     workflowId,
     workspaceId,
     operation,
+    rolePermissionConfig,
   }: {
     workflowVersionRepository: WorkspaceRepository<WorkflowVersionWorkspaceEntity>;
     workspaceId: string;
     workflowId: string;
     operation: 'restore' | 'delete' | 'destroy';
+    rolePermissionConfig: ScopedRolePermissionConfig;
   }) {
     if (operation !== 'delete') {
       return;
@@ -344,12 +374,13 @@ export class WorkflowCommonWorkspaceService {
       async ({ getRepository }) => {
         const workflowRepository = getRepository<WorkflowWorkspaceEntity>(
           'workflow',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
         const transactionalWorkflowVersionRepository =
-          getRepository<WorkflowVersionWorkspaceEntity>('workflowVersion', {
-            shouldBypassPermissionChecks: true,
-          });
+          getRepository<WorkflowVersionWorkspaceEntity>(
+            'workflowVersion',
+            rolePermissionConfig,
+          );
 
         const workflow = await workflowRepository.findOne({
           where: { id: workflowId },
@@ -410,6 +441,33 @@ export class WorkflowCommonWorkspaceService {
         workspaceId,
       );
     }
+  }
+
+  private async resolveScopedAuthority(
+    workspaceId: string,
+    suppliedAuthContext?: WorkspaceAuthContext,
+  ): Promise<{
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
+  }> {
+    const authContext = suppliedAuthContext ?? getWorkspaceAuthContext();
+    const rolePermissionConfig =
+      await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      );
+
+    if (
+      authContext.workspace.id !== workspaceId ||
+      rolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in rolePermissionConfig
+    ) {
+      throw new WorkflowTriggerException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        WorkflowTriggerExceptionCode.FORBIDDEN,
+      );
+    }
+
+    return { authContext, rolePermissionConfig };
   }
 
   async handleLogicFunctionSubEntities({

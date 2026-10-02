@@ -1,10 +1,11 @@
-import { useMutation } from '@apollo/client/react';
-import { DeleteOneFieldMetadataItemDocument } from '~/generated-metadata/graphql';
-
 import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
 import { useMetadataErrorHandler } from '@/metadata-error-handler/hooks/useMetadataErrorHandler';
 import { useUpdateMetadataStoreDraft } from '@/metadata-store/hooks/useUpdateMetadataStoreDraft';
 import { type MetadataRequestResult } from '@/object-metadata/types/MetadataRequestResult.type';
+import {
+  type PreparedMetadataDeletion,
+  useMetadataDeletionChangeSet,
+} from '@/object-metadata/hooks/useMetadataDeletionChangeSet';
 import { recordIndexGroupAggregateFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupAggregateFieldMetadataItemComponentState';
 import { recordIndexGroupAggregateOperationComponentState } from '@/object-record/record-index/states/recordIndexGroupAggregateOperationComponentState';
 import { AggregateOperations } from '@/object-record/record-table/constants/AggregateOperations';
@@ -16,9 +17,8 @@ import { t } from '@lingui/core/macro';
 import { CrudOperationType } from 'twenty-shared/types';
 
 export const useDeleteOneFieldMetadataItem = () => {
-  const [deleteOneFieldMetadataItemMutation] = useMutation(
-    DeleteOneFieldMetadataItemDocument,
-  );
+  const { applyPreparedMetadataDeletion, prepareMetadataDeletion } =
+    useMetadataDeletionChangeSet();
 
   const { handleMetadataError } = useMetadataErrorHandler();
   const { enqueueErrorSnackBar } = useSnackBar();
@@ -49,20 +49,50 @@ export const useDeleteOneFieldMetadataItem = () => {
     }
   };
 
-  const deleteOneFieldMetadataItem = async ({
+  const handleError = (error: unknown) => {
+    if (CombinedGraphQLErrors.is(error)) {
+      handleMetadataError(error, {
+        primaryMetadataName: 'fieldMetadata',
+        operationType: CrudOperationType.DELETE,
+      });
+    } else {
+      enqueueErrorSnackBar({ message: t`An error occurred.` });
+    }
+  };
+
+  const prepareDeleteOneFieldMetadataItem = async ({
     idToDelete,
   }: {
     idToDelete: string;
+  }): Promise<MetadataRequestResult<PreparedMetadataDeletion>> => {
+    try {
+      const response = await prepareMetadataDeletion({
+        targetType: 'FIELD',
+        targetId: idToDelete,
+      });
+
+      return { status: 'successful', response };
+    } catch (error) {
+      handleError(error);
+
+      return { status: 'failed', error };
+    }
+  };
+
+  const deleteOneFieldMetadataItem = async ({
+    idToDelete,
+    preparedDeletion,
+  }: {
+    idToDelete: string;
+    preparedDeletion: PreparedMetadataDeletion;
   }): Promise<
     MetadataRequestResult<
-      Awaited<ReturnType<typeof deleteOneFieldMetadataItemMutation>>
+      Awaited<ReturnType<typeof applyPreparedMetadataDeletion>>
     >
   > => {
     try {
-      const response = await deleteOneFieldMetadataItemMutation({
-        variables: {
-          idToDelete,
-        },
+      const response = await applyPreparedMetadataDeletion(preparedDeletion, {
+        acknowledgeDependencies: true,
       });
 
       removeFromDraft({ key: 'fieldMetadataItems', itemIds: [idToDelete] });
@@ -76,14 +106,7 @@ export const useDeleteOneFieldMetadataItem = () => {
         response,
       };
     } catch (error) {
-      if (CombinedGraphQLErrors.is(error)) {
-        handleMetadataError(error, {
-          primaryMetadataName: 'fieldMetadata',
-          operationType: CrudOperationType.DELETE,
-        });
-      } else {
-        enqueueErrorSnackBar({ message: t`An error occurred.` });
-      }
+      handleError(error);
 
       return {
         status: 'failed',
@@ -94,5 +117,6 @@ export const useDeleteOneFieldMetadataItem = () => {
 
   return {
     deleteOneFieldMetadataItem,
+    prepareDeleteOneFieldMetadataItem,
   };
 };

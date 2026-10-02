@@ -33,4 +33,9 @@ export const HEALTH_INDICATORS: Record<HealthIndicatorId, HealthIndicatorInfo> =
       label: 'App',
       description: 'Workspace metadata migration status check',
     },
+    [HealthIndicatorId.idealCrm]: {
+      id: HealthIndicatorId.idealCrm,
+      label: 'Ideal CRM Recovery',
+      description: 'Durable protected-operation recovery status',
+    },
   };

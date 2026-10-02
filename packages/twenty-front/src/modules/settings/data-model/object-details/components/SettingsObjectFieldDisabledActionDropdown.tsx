@@ -24,6 +24,7 @@ type SettingsObjectFieldInactiveActionDropdownProps = {
   onDelete: () => void;
   fieldMetadataItemId: string;
   readonly?: boolean;
+  deleteActionText?: string;
 };
 
 export const SettingsObjectFieldInactiveActionDropdown = ({
@@ -34,6 +35,7 @@ export const SettingsObjectFieldInactiveActionDropdown = ({
   onEdit,
   isCustomField,
   isSystemField,
+  deleteActionText,
 }: SettingsObjectFieldInactiveActionDropdownProps) => {
   const dropdownId = `${fieldMetadataItemId}-settings-field-disabled-action-dropdown`;
 
@@ -83,7 +85,7 @@ export const SettingsObjectFieldInactiveActionDropdown = ({
             )}
             {isDeletable && !readonly && (
               <MenuItem
-                text={t`Delete`}
+                text={deleteActionText ?? t`Delete`}
                 accent="danger"
                 LeftIcon={IconTrash}
                 onClick={handleDelete}

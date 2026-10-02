@@ -15,6 +15,8 @@ import { formatWorkflowRecordRelationFields } from 'src/modules/workflow/workflo
 import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/find-step-or-throw.util';
 import { resolveRichTextFieldsInRecord } from 'src/modules/workflow/workflow-executor/utils/resolve-rich-text-fields-in-record.util';
 import { type WorkflowCreateRecordActionInput } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/types/workflow-record-crud-action-input.type';
+import { WorkflowRecordEffectService } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/workflow-record-effect.service';
+import { getWorkflowRecordFieldMetadataIds } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/utils/get-workflow-record-field-metadata-ids.util';
 
 @Injectable()
 export class CreateRecordWorkflowAction implements WorkflowAction {
@@ -22,6 +24,7 @@ export class CreateRecordWorkflowAction implements WorkflowAction {
     private readonly createRecordService: CreateRecordService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
     private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
+    private readonly workflowRecordEffectService: WorkflowRecordEffectService,
   ) {}
 
   async execute({
@@ -76,12 +79,30 @@ export class CreateRecordWorkflowAction implements WorkflowAction {
 
     const createdBy = buildWorkflowActorMetadata(executionContext);
 
-    const toolOutput = await this.createRecordService.execute({
+    const toolOutput = await this.workflowRecordEffectService.execute({
+      operation: 'create_one',
       objectName: workflowActionInput.objectName,
-      objectRecord: filteredObjectRecord,
-      authContext: executionContext.authContext,
-      createdBy,
-      rolePermissionConfig: executionContext.rolePermissionConfig,
+      objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+      fieldMetadataIds: getWorkflowRecordFieldMetadataIds({
+        objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+        fieldNames: Object.keys(filteredObjectRecord),
+        flatFieldMetadataMaps: objectMetadataInfo.flatFieldMetadataMaps,
+      }),
+      actionInput: {
+        objectName: workflowActionInput.objectName,
+        objectRecord: filteredObjectRecord,
+      },
+      executionContext,
+      runInfo,
+      stepId: currentStepId,
+      execute: () =>
+        this.createRecordService.execute({
+          objectName: workflowActionInput.objectName,
+          objectRecord: filteredObjectRecord,
+          authContext: executionContext.authContext,
+          createdBy,
+          rolePermissionConfig: executionContext.rolePermissionConfig,
+        }),
     });
 
     if (!toolOutput.success) {

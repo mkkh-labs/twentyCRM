@@ -9,14 +9,16 @@ import { PageLayoutTabService } from 'src/engine/metadata-modules/page-layout-ta
 import { PageLayoutWidgetService } from 'src/engine/metadata-modules/page-layout-widget/services/page-layout-widget.service';
 import { PageLayoutService } from 'src/engine/metadata-modules/page-layout/services/page-layout.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
 import { createAddDashboardTabTool } from 'src/modules/dashboard/tools/add-dashboard-tab.tool';
 import { createAddDashboardWidgetTool } from 'src/modules/dashboard/tools/add-dashboard-widget.tool';
 import { createCreateCompleteDashboardTool } from 'src/modules/dashboard/tools/create-complete-dashboard.tool';
 import { createDeleteDashboardWidgetTool } from 'src/modules/dashboard/tools/delete-dashboard-widget.tool';
 import { createGetDashboardTool } from 'src/modules/dashboard/tools/get-dashboard.tool';
 import { createListDashboardsTool } from 'src/modules/dashboard/tools/list-dashboards.tool';
-import { type DashboardToolDependencies } from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
+import {
+  type DashboardToolContext,
+  type DashboardToolDependencies,
+} from 'src/modules/dashboard/tools/types/dashboard-tool-dependencies.type';
 import { createUpdateDashboardWidgetTool } from 'src/modules/dashboard/tools/update-dashboard-widget.tool';
 
 @Injectable()
@@ -43,12 +45,7 @@ export class DashboardToolWorkspaceService {
     };
   }
 
-  generateDashboardTools(
-    workspaceId: string,
-    _rolePermissionConfig: RolePermissionConfig,
-  ): ToolSet {
-    const context = { workspaceId };
-
+  generateDashboardTools(context: DashboardToolContext): ToolSet {
     const createCompleteDashboard = createCreateCompleteDashboardTool(
       this.deps,
       context,

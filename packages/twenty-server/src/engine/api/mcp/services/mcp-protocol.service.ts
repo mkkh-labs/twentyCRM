@@ -214,6 +214,7 @@ export class McpProtocolService {
       userId: options?.userId,
       userWorkspaceId: options?.userWorkspaceId,
       actorContext,
+      automationAllowed: true,
     };
 
     const preloadedTools = await this.toolRegistry.getToolsByName(

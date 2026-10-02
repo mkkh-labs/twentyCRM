@@ -18,6 +18,9 @@ import { Repository } from 'typeorm';
 import { v4 } from 'uuid';
 
 import { getFlatFieldsFromFlatObjectMetadata } from 'src/engine/api/graphql/workspace-schema-builder/utils/get-flat-fields-for-flat-object-metadata.util';
+import { getWorkspaceAuthContext } from 'src/engine/core-modules/auth/storage/workspace-auth-context.storage';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { type ScopedRolePermissionConfig } from 'src/engine/core-modules/policy/types/policy-context.type';
 import { type WorkflowStepPositionInput } from 'src/engine/core-modules/workflow/dtos/update-workflow-step-position.input';
 import { WorkflowVersionCoreSyncService } from 'src/engine/core-modules/workflow/services/workflow-version-core-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
@@ -34,7 +37,6 @@ import { findFlatLogicFunctionOrThrow } from 'src/engine/metadata-modules/logic-
 import { ObjectMetadataEntity } from 'src/engine/metadata-modules/object-metadata/object-metadata.entity';
 import { RoleTargetEntity } from 'src/engine/metadata-modules/role-target/role-target.entity';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
 import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
@@ -52,6 +54,10 @@ import {
   type WorkflowEmptyAction,
   type WorkflowFormAction,
 } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action.type';
+import {
+  WorkflowTriggerException,
+  WorkflowTriggerExceptionCode,
+} from 'src/modules/workflow/workflow-trigger/exceptions/workflow-trigger.exception';
 const BASE_STEP_DEFINITION: BaseWorkflowActionSettings = {
   outputSchema: {},
   errorHandlingOptions: {
@@ -727,7 +733,8 @@ export class WorkflowVersionStepOperationsWorkspaceService {
     step: WorkflowFormAction;
     response: object;
   }) {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const responseKeys = Object.keys(response);
@@ -765,7 +772,7 @@ export class WorkflowVersionStepOperationsWorkspaceService {
 
             const repository = this.workspaceOrmManager.getRepository(
               field.settings.objectName,
-              { shouldBypassPermissionChecks: true },
+              rolePermissionConfig,
             );
 
             const record = await repository.findOne({
@@ -918,13 +925,14 @@ export class WorkflowVersionStepOperationsWorkspaceService {
     workspaceId: string;
     iteratorPosition?: WorkflowStepPositionInput;
   }): Promise<WorkflowAction> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowVersionRepository =
         this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
           'workflowVersion',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const workflowVersion = await workflowVersionRepository.findOne({
@@ -967,6 +975,7 @@ export class WorkflowVersionStepOperationsWorkspaceService {
 
           return workflowVersion.id;
         },
+        { authContext, rolePermissionConfig },
       );
 
       return emptyNodeStep;
@@ -987,13 +996,14 @@ export class WorkflowVersionStepOperationsWorkspaceService {
     ifFilterGroupId: string;
     branches: StepIfElseBranch[];
   }> {
-    const authContext = buildSystemAuthContext(workspaceId);
+    const { authContext, rolePermissionConfig } =
+      await this.resolveScopedAuthority(workspaceId);
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
       const workflowVersionRepository =
         this.workspaceOrmManager.getRepository<WorkflowVersionWorkspaceEntity>(
           'workflowVersion',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const workflowVersion = await workflowVersionRepository.findOne({
@@ -1050,6 +1060,7 @@ export class WorkflowVersionStepOperationsWorkspaceService {
 
           return workflowVersion.id;
         },
+        { authContext, rolePermissionConfig },
       );
 
       const ifFilterGroupId = v4();
@@ -1105,5 +1116,29 @@ export class WorkflowVersionStepOperationsWorkspaceService {
         return step;
       }
     }
+  }
+
+  private async resolveScopedAuthority(workspaceId: string): Promise<{
+    authContext: WorkspaceAuthContext;
+    rolePermissionConfig: ScopedRolePermissionConfig;
+  }> {
+    const authContext = getWorkspaceAuthContext();
+    const rolePermissionConfig =
+      await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+        authContext,
+      );
+
+    if (
+      authContext.workspace.id !== workspaceId ||
+      rolePermissionConfig === null ||
+      'shouldBypassPermissionChecks' in rolePermissionConfig
+    ) {
+      throw new WorkflowTriggerException(
+        'Workflow authority is unresolved or not scoped to the workspace',
+        WorkflowTriggerExceptionCode.FORBIDDEN,
+      );
+    }
+
+    return { authContext, rolePermissionConfig };
   }
 }

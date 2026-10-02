@@ -148,12 +148,14 @@ export class AgentAsyncExecutorService {
     runAsRoleId,
     authContext,
     actorContext,
+    rootCorrelationId,
   }: {
     agent: AgentEntity;
     agentRoleId: string;
     runAsRoleId?: string;
     authContext?: WorkspaceAuthContext;
     actorContext?: ActorMetadata;
+    rootCorrelationId?: string;
   }): Promise<ToolSet> {
     const { userId, userWorkspaceId } = this.resolveUserIdentity(authContext);
 
@@ -169,6 +171,8 @@ export class AgentAsyncExecutorService {
       actorContext,
       userId,
       userWorkspaceId,
+      automationAllowed: true,
+      rootCorrelationId,
     };
 
     return this.toolRegistry.getToolsByCategories(toolProviderContext, {
@@ -188,12 +192,14 @@ export class AgentAsyncExecutorService {
     runAsRoleId,
     authContext,
     actorContext,
+    rootCorrelationId,
   }: {
     agent: AgentEntity;
     agentRoleId: string;
     runAsRoleId?: string;
     authContext?: WorkspaceAuthContext;
     actorContext?: ActorMetadata;
+    rootCorrelationId?: string;
   }): Promise<{ tools: ToolSet; catalogSection: string }> {
     const { userId, userWorkspaceId } = this.resolveUserIdentity(authContext);
 
@@ -209,6 +215,8 @@ export class AgentAsyncExecutorService {
       actorContext,
       userId,
       userWorkspaceId,
+      automationAllowed: true,
+      rootCorrelationId,
     };
 
     const fullCatalog = await this.toolRegistry.buildToolIndex(
@@ -260,6 +268,7 @@ export class AgentAsyncExecutorService {
     runAsRoleId,
     operationType = UsageOperationType.AI_WORKFLOW_TOKEN,
     toolLoadingStrategy = 'preload',
+    rootCorrelationId,
   }: {
     agent: AgentEntity | null;
     messages: RunAgentMessage[];
@@ -271,6 +280,7 @@ export class AgentAsyncExecutorService {
     runAsRoleId?: string;
     operationType?: UsageOperationType;
     toolLoadingStrategy?: AgentToolLoadingStrategy;
+    rootCorrelationId?: string;
   }): Promise<AgentExecutionResult> {
     if (!isNonEmptyArray(messages)) {
       throw new AiException(
@@ -335,6 +345,7 @@ export class AgentAsyncExecutorService {
               runAsRoleId,
               authContext,
               actorContext,
+              rootCorrelationId,
             });
 
             registryTools = lazyToolset.tools;
@@ -346,6 +357,7 @@ export class AgentAsyncExecutorService {
               runAsRoleId,
               authContext,
               actorContext,
+              rootCorrelationId,
             });
           }
         }

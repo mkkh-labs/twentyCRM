@@ -19,6 +19,7 @@ import { ConfigVariablesGroup } from 'src/engine/core-modules/twenty-config/enum
 import { ConfigGroupHashService } from 'src/engine/core-modules/twenty-config/services/config-group-hash.service';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+import { assertLogicFunctionDriverIsSafe } from 'src/engine/core-modules/logic-function/logic-function-drivers/utils/assert-logic-function-driver-is-safe.util';
 
 @Injectable()
 export class LogicFunctionDriverFactory extends DriverFactoryBase<LogicFunctionDriver> {
@@ -45,6 +46,24 @@ export class LogicFunctionDriverFactory extends DriverFactoryBase<LogicFunctionD
 
   protected createDriver(): LogicFunctionDriver {
     const driverType = this.twentyConfigService.get('LOGIC_FUNCTION_TYPE');
+    const lambdaReservedConcurrency = this.twentyConfigService.get(
+      'LOGIC_FUNCTION_LAMBDA_RESERVED_CONCURRENCY',
+    );
+
+    assertLogicFunctionDriverIsSafe({
+      driverType,
+      nodeEnvironment: this.twentyConfigService.get('NODE_ENV'),
+      lambdaEgressMode: this.twentyConfigService.get(
+        'LOGIC_FUNCTION_LAMBDA_EGRESS_MODE',
+      ),
+      lambdaReservedConcurrency,
+      lambdaSubnetIds: this.twentyConfigService.get(
+        'LOGIC_FUNCTION_LAMBDA_SUBNET_IDS',
+      ),
+      lambdaSecurityGroupIds: this.twentyConfigService.get(
+        'LOGIC_FUNCTION_LAMBDA_SECURITY_GROUP_IDS',
+      ),
+    });
 
     switch (driverType) {
       case LogicFunctionDriverType.DISABLED:
@@ -86,6 +105,15 @@ export class LogicFunctionDriverFactory extends DriverFactoryBase<LogicFunctionD
         const resourceNamespace = getLambdaResourceNamespace({
           lambdaRoleArn: lambdaRole,
         });
+        const lambdaEgressMode = this.twentyConfigService.get(
+          'LOGIC_FUNCTION_LAMBDA_EGRESS_MODE',
+        );
+        const lambdaSubnetIds = this.twentyConfigService.get(
+          'LOGIC_FUNCTION_LAMBDA_SUBNET_IDS',
+        );
+        const lambdaSecurityGroupIds = this.twentyConfigService.get(
+          'LOGIC_FUNCTION_LAMBDA_SECURITY_GROUP_IDS',
+        );
 
         return new LambdaDriver({
           logicFunctionResourceService: this.logicFunctionResourceService,
@@ -100,7 +128,15 @@ export class LogicFunctionDriverFactory extends DriverFactoryBase<LogicFunctionD
           layerBucket,
           layerBucketRegion,
           resourceNamespace,
+          reservedConcurrency: lambdaReservedConcurrency,
           sdkClientArchiveService: this.sdkClientArchiveService,
+          vpcConfig:
+            lambdaEgressMode === 'VPC_CONTROLLED'
+              ? {
+                  subnetIds: lambdaSubnetIds,
+                  securityGroupIds: lambdaSecurityGroupIds,
+                }
+              : undefined,
         });
       }
 

@@ -1,7 +1,7 @@
 import { createUpdateAgentTool } from 'src/modules/workflow/workflow-tools/tools/update-agent.tool';
 
 const AGENT_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
-const WORKSPACE_ID = 'workspace-id';
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 
 const buildAiAgentStep = (agentId: string, stepId = 'step-1') => ({
   id: stepId,
@@ -26,6 +26,9 @@ const buildTool = ({
     find: jest.fn().mockResolvedValue(draftVersions),
   };
   const workspaceOrmManager = {
+    executeInWorkspaceContext: jest
+      .fn()
+      .mockImplementation(async (callback) => callback()),
     getRepository: jest.fn().mockReturnValue(workflowVersionRepository),
   };
   const flatEntityMapsCacheService = {
@@ -39,7 +42,17 @@ const buildTool = ({
       workspaceOrmManager,
       flatEntityMapsCacheService,
     } as never,
-    { workspaceId: WORKSPACE_ID },
+    {
+      workspaceId: WORKSPACE_ID,
+      rolePermissionConfig: {
+        unionOf: ['22222222-2222-4222-8222-222222222222'],
+      },
+      authContext: {
+        type: 'application',
+        workspace: { id: WORKSPACE_ID },
+        application: { id: '33333333-3333-4333-8333-333333333333' },
+      },
+    } as never,
   );
 
   return {

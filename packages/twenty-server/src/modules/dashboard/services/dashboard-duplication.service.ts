@@ -4,9 +4,17 @@ import { appendCopySuffix, isDefined } from 'twenty-shared/utils';
 
 import { ActorFromAuthContextService } from 'src/engine/core-modules/actor/services/actor-from-auth-context.service';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import {
+  PermissionsException,
+  PermissionsExceptionCode,
+  PermissionsExceptionMessage,
+} from 'src/engine/metadata-modules/permissions/permissions.exception';
 import { PageLayoutDuplicationService } from 'src/engine/metadata-modules/page-layout/services/page-layout-duplication.service';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { WorkspaceRepository } from 'src/engine/twenty-orm/repository/workspace-repository';
+import { getWorkspaceContext } from 'src/engine/twenty-orm/storage/orm-workspace-context.storage';
+import { type RolePermissionConfig } from 'src/engine/twenty-orm/types/role-permission-config';
+import { getObjectsPermissionsFromRolePermissionConfig } from 'src/engine/twenty-orm/utils/get-objects-permissions-from-role-permission-config.util';
 import { DuplicatedDashboardDTO } from 'src/modules/dashboard/dtos/duplicated-dashboard.dto';
 import {
   DashboardException,
@@ -34,10 +42,24 @@ export class DashboardDuplicationService {
     const workspaceId = workspace.id;
 
     return this.workspaceOrmManager.executeInWorkspaceContext(async () => {
+      const rolePermissionConfig =
+        await this.workspaceOrmManager.resolveRolePermissionConfigForAuthContext(
+          authContext,
+        );
+
+      if (
+        !isDefined(rolePermissionConfig) ||
+        'shouldBypassPermissionChecks' in rolePermissionConfig
+      ) {
+        this.throwPermissionDenied();
+      }
+
+      this.validateDuplicationPermissionOrThrow(rolePermissionConfig);
+
       const dashboardRepository =
         this.workspaceOrmManager.getRepository<DashboardWorkspaceEntity>(
           'dashboard',
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
       const originalDashboard = await dashboardRepository.findOne({
@@ -96,6 +118,44 @@ export class DashboardDuplicationService {
         throw error;
       }
     }, authContext);
+  }
+
+  private validateDuplicationPermissionOrThrow(
+    rolePermissionConfig: RolePermissionConfig,
+  ): void {
+    const { objectIdByNameSingular, permissionsPerRoleId } =
+      getWorkspaceContext();
+    const dashboardObjectMetadataId = objectIdByNameSingular.dashboard;
+    const dashboardPermission = isDefined(dashboardObjectMetadataId)
+      ? getObjectsPermissionsFromRolePermissionConfig({
+          rolesPermissions: permissionsPerRoleId,
+          rolePermissionConfig,
+        })[dashboardObjectMetadataId]
+      : undefined;
+    const restrictedFieldPermissions = Object.values(
+      dashboardPermission?.restrictedFields ?? {},
+    ).filter(isDefined);
+    const canDuplicate =
+      dashboardPermission?.canReadObjectRecords === true &&
+      dashboardPermission.canUpdateObjectRecords === true &&
+      restrictedFieldPermissions.every(
+        (fieldPermission) =>
+          fieldPermission.canRead !== false &&
+          fieldPermission.canUpdate !== false,
+      ) &&
+      dashboardPermission.rowLevelPermissionPredicates.length === 0 &&
+      dashboardPermission.rowLevelPermissionPredicateGroups.length === 0;
+
+    if (!canDuplicate) {
+      this.throwPermissionDenied();
+    }
+  }
+
+  private throwPermissionDenied(): never {
+    throw new PermissionsException(
+      PermissionsExceptionMessage.PERMISSION_DENIED,
+      PermissionsExceptionCode.PERMISSION_DENIED,
+    );
   }
 
   private async createDuplicatedDashboard(

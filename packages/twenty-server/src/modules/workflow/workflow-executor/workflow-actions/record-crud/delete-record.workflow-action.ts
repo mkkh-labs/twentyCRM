@@ -10,17 +10,21 @@ import {
   WorkflowStepExecutorExceptionCode,
 } from 'src/modules/workflow/workflow-executor/exceptions/workflow-step-executor.exception';
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
+import { WorkflowCommonWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-common.workspace-service';
 import { type WorkflowActionInput } from 'src/modules/workflow/workflow-executor/types/workflow-action-input';
 import { type WorkflowActionOutput } from 'src/modules/workflow/workflow-executor/types/workflow-action-output.type';
 import { findStepOrThrow } from 'src/modules/workflow/workflow-executor/utils/find-step-or-throw.util';
 import { isWorkflowDeleteRecordAction } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/guards/is-workflow-delete-record-action.guard';
 import { type WorkflowDeleteRecordActionInput } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/types/workflow-record-crud-action-input.type';
+import { WorkflowRecordEffectService } from 'src/modules/workflow/workflow-executor/workflow-actions/record-crud/workflow-record-effect.service';
 
 @Injectable()
 export class DeleteRecordWorkflowAction implements WorkflowAction {
   constructor(
     private readonly deleteRecordService: DeleteRecordService,
     private readonly workflowExecutionContextService: WorkflowExecutionContextService,
+    private readonly workflowCommonWorkspaceService: WorkflowCommonWorkspaceService,
+    private readonly workflowRecordEffectService: WorkflowRecordEffectService,
   ) {}
 
   async execute({
@@ -59,13 +63,33 @@ export class DeleteRecordWorkflowAction implements WorkflowAction {
 
     const executionContext =
       await this.workflowExecutionContextService.getExecutionContext(runInfo);
+    const objectMetadataInfo =
+      await this.workflowCommonWorkspaceService.getObjectMetadataInfo(
+        workflowActionInput.objectName,
+        runInfo.workspaceId,
+      );
 
-    const toolOutput = await this.deleteRecordService.execute({
+    const toolOutput = await this.workflowRecordEffectService.execute({
+      operation: 'delete_one',
       objectName: workflowActionInput.objectName,
-      objectRecordId: workflowActionInput.objectRecordId,
-      authContext: executionContext.authContext,
-      rolePermissionConfig: executionContext.rolePermissionConfig,
-      soft: true,
+      objectMetadataId: objectMetadataInfo.flatObjectMetadata.id,
+      fieldMetadataIds: [],
+      recordIds: [workflowActionInput.objectRecordId],
+      actionInput: {
+        objectName: workflowActionInput.objectName,
+        objectRecordId: workflowActionInput.objectRecordId,
+      },
+      executionContext,
+      runInfo,
+      stepId: currentStepId,
+      execute: () =>
+        this.deleteRecordService.execute({
+          objectName: workflowActionInput.objectName,
+          objectRecordId: workflowActionInput.objectRecordId,
+          authContext: executionContext.authContext,
+          rolePermissionConfig: executionContext.rolePermissionConfig,
+          soft: true,
+        }),
     });
 
     if (!toolOutput.success) {

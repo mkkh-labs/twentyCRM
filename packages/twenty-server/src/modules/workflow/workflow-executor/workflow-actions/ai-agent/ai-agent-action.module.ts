@@ -10,6 +10,9 @@ import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspac
 import { UserRoleModule } from 'src/engine/metadata-modules/user-role/user-role.module';
 import { WorkflowExecutionContextService } from 'src/modules/workflow/workflow-executor/services/workflow-execution-context.service';
 import { WorkflowRunModule } from 'src/modules/workflow/workflow-runner/workflow-run/workflow-run.module';
+import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
+import { WorkflowReliabilityModule } from 'src/engine/core-modules/workflow-reliability/workflow-reliability.module';
+import { WorkflowActionEffectService } from 'src/modules/workflow/workflow-executor/services/workflow-action-effect.service';
 
 import { AiAgentWorkflowAction } from './ai-agent.workflow-action';
 
@@ -22,9 +25,12 @@ import { AiAgentWorkflowAction } from './ai-agent.workflow-action';
     UserWorkspaceModule,
     UserRoleModule,
     RoleModule,
+    PermissionsModule,
+    WorkflowReliabilityModule,
   ],
   providers: [
     WorkflowExecutionContextService,
+    WorkflowActionEffectService,
     AiAgentWorkflowAction,
     provideWorkspaceScopedRepository(AgentEntity),
   ],

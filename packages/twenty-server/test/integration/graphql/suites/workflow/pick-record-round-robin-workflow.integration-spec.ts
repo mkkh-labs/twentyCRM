@@ -13,6 +13,7 @@ describe('Pick Record Workflow - round robin (e2e)', () => {
   let createdWorkflowVersionId: string | null = null;
   let pickRecordStepId: string | null = null;
   let orderedCandidateRecordIds: string[] = [];
+  const createdCompanyIds: string[] = [];
 
   beforeAll(async () => {
     const createWorkflowResponse = await client
@@ -106,26 +107,30 @@ describe('Pick Record Workflow - round robin (e2e)', () => {
 
     pickRecordStepId = pickRecordStep.id;
 
-    const companiesResponse = await client
-      .post('/graphql')
-      .set('Authorization', `Bearer ${APPLE_JANE_ADMIN_ACCESS_TOKEN}`)
-      .send({
-        query: `
-          query Companies {
-            companies(first: 3) {
-              edges {
-                node {
-                  id
-                }
+    for (const companyName of [
+      'Pick Record Round Robin company one',
+      'Pick Record Round Robin company two',
+      'Pick Record Round Robin company three',
+    ]) {
+      const createCompanyResponse = await client
+        .post('/graphql')
+        .set('Authorization', `Bearer ${APPLE_JANE_ADMIN_ACCESS_TOKEN}`)
+        .send({
+          query: `
+            mutation CreateCompany($name: String!) {
+              createCompany(data: { name: $name }) {
+                id
               }
             }
-          }
-        `,
-      });
+          `,
+          variables: { name: companyName },
+        });
 
-    const candidateRecordIds = companiesResponse.body.data.companies.edges.map(
-      (edge: { node: { id: string } }) => edge.node.id,
-    );
+      expect(createCompanyResponse.body.errors).toBeUndefined();
+      createdCompanyIds.push(createCompanyResponse.body.data.createCompany.id);
+    }
+
+    const candidateRecordIds = [...createdCompanyIds];
 
     expect(candidateRecordIds.length).toBe(3);
 
@@ -181,6 +186,22 @@ describe('Pick Record Workflow - round robin (e2e)', () => {
   });
 
   afterAll(async () => {
+    for (const companyId of createdCompanyIds) {
+      await client
+        .post('/graphql')
+        .set('Authorization', `Bearer ${APPLE_JANE_ADMIN_ACCESS_TOKEN}`)
+        .send({
+          query: `
+            mutation DeleteCompany($id: UUID!) {
+              deleteCompany(id: $id) {
+                id
+              }
+            }
+          `,
+          variables: { id: companyId },
+        });
+    }
+
     if (createdWorkflowId) {
       await client
         .post('/graphql')

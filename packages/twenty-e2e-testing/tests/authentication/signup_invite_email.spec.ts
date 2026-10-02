@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { expect, test } from './fixture';
 
+test.use({ storageState: { cookies: [], origins: [] } });
+
 test('Sign up with invite link via email', async ({
   page,
   loginPage,
@@ -16,7 +18,25 @@ test('Sign up with invite link via email', async ({
 
   const inviteLink: string =
     await test.step('Go to Settings and copy invite link', async () => {
-      await page.goto(process.env.LINK); // skip login page (and redirect) when running on environments with multi-workspace enabled
+      await page.goto('/');
+      await loginPage.clickLoginWithEmailIfVisible();
+      await loginPage.typeEmail(process.env.DEFAULT_LOGIN);
+      await loginPage.clickContinueButton();
+      await loginPage.typePassword(process.env.DEFAULT_PASSWORD);
+      await loginPage.clickSignInButton();
+
+      const workspaceChooser = page.getByText('Choose a workspace');
+      const companiesLanding = page.getByText('All Companies', {
+        exact: false,
+      });
+
+      await expect(workspaceChooser.or(companiesLanding).first()).toBeVisible();
+
+      if (await workspaceChooser.isVisible()) {
+        await page.getByText('Apple', { exact: true }).click();
+      }
+
+      await expect(companiesLanding).toBeVisible();
       await leftMenu.goToSettings();
       await settingsPage.goToMembersSection();
       await membersSection.copyInviteLink();
@@ -25,9 +45,7 @@ test('Sign up with invite link via email', async ({
 
   await test.step('Go to invite link', async () => {
     await settingsPage.logout();
-    // Logging out replaces the document, which would interrupt the goto below.
     await page.waitForURL('**/welcome');
-
     await page.goto(inviteLink);
     await expect(page.getByText(/Join .+ team/)).toBeVisible();
   });
@@ -38,6 +56,7 @@ test('Sign up with invite link via email', async ({
     await loginPage.clickContinueButton();
     await loginPage.typePassword(process.env.DEFAULT_PASSWORD);
     await loginPage.clickSignUpButton();
+    await loginPage.skipOptionalOnboardingStepsUntilCreateProfile();
     await expect(page.getByText('Create profile')).toBeVisible();
     await expect(page.getByPlaceholder('Head of Partnerships')).toBeVisible();
     await loginPage.typeFirstName(firstName);

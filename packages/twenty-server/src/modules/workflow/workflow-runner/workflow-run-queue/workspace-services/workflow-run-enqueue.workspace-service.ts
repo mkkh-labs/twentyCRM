@@ -8,7 +8,6 @@ import { MessageQueueService } from 'src/engine/core-modules/message-queue/servi
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
 import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
-import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   WorkflowRunStatus,
   WorkflowRunWorkspaceEntity,
@@ -18,6 +17,7 @@ import { type RunWorkflowJobData } from 'src/modules/workflow/workflow-runner/ty
 import { buildRunWorkflowJobOptions } from 'src/modules/workflow/workflow-runner/utils/build-run-workflow-job-options.util';
 import { NOT_STARTED_RUNS_FIND_OPTIONS } from 'src/modules/workflow/workflow-runner/workflow-run-queue/constants/not-started-runs-find-options';
 import { WorkflowThrottlingWorkspaceService } from 'src/modules/workflow/workflow-runner/workflow-run-queue/workspace-services/workflow-throttling.workspace-service';
+import { WorkflowServiceAuthorityWorkspaceService } from 'src/modules/workflow/common/workspace-services/workflow-service-authority.workspace-service';
 
 @Injectable()
 export class WorkflowRunEnqueueWorkspaceService {
@@ -28,6 +28,7 @@ export class WorkflowRunEnqueueWorkspaceService {
     @InjectMessageQueue(MessageQueue.workflowQueue)
     private readonly messageQueueService: MessageQueueService,
     private readonly metricsService: MetricsService,
+    private readonly workflowServiceAuthorityWorkspaceService: WorkflowServiceAuthorityWorkspaceService,
   ) {}
 
   async enqueueRunsForWorkspace({
@@ -47,12 +48,15 @@ export class WorkflowRunEnqueueWorkspaceService {
     }
 
     try {
-      const authContext = buildSystemAuthContext(workspaceId);
+      const { authContext, rolePermissionConfig } =
+        await this.workflowServiceAuthorityWorkspaceService.resolve(
+          workspaceId,
+        );
 
       await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
         const workflowRunRepository = this.workspaceOrmManager.getRepository(
           WorkflowRunWorkspaceEntity,
-          { shouldBypassPermissionChecks: true },
+          rolePermissionConfig,
         );
 
         const notStartedRunsCount = isCacheMode
@@ -114,6 +118,8 @@ export class WorkflowRunEnqueueWorkspaceService {
               {
                 workflowRunId,
                 workspaceId,
+                policySchemaVersion: 1,
+                rootCorrelationId: workflowRunId,
               },
               buildRunWorkflowJobOptions(workflowRunId),
             );

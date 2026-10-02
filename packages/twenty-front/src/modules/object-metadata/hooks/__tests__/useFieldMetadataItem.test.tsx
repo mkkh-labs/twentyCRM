@@ -67,8 +67,22 @@ jest.mock('@/object-metadata/hooks/useDeleteOneFieldMetadataItem', () => ({
           },
         });
       }),
+    prepareDeleteOneFieldMetadataItem: jest.fn(),
   }),
 }));
+
+const preparedDeletion = {
+  id: '22222222-2222-4222-8222-222222222222',
+  version: 2,
+  dependencyImpact: {
+    workflows: [],
+    views: [],
+    applications: [],
+    contracts: [],
+    metadata: [],
+  },
+  dependencyCount: 0,
+};
 
 const fieldMetadataItem: FieldMetadataItem = {
   id: FIELD_METADATA_ID,
@@ -244,6 +258,7 @@ describe('useFieldMetadataItem', () => {
     await act(async () => {
       const res = await result.current.deleteMetadataField({
         idToDelete: fieldMetadataItem.id,
+        preparedDeletion,
       });
       jestExpectSuccessfulMetadataRequestResult(res);
 
@@ -263,6 +278,7 @@ describe('useFieldMetadataItem', () => {
     await act(async () => {
       const res = await result.current.deleteMetadataField({
         idToDelete: fieldRelationMetadataItem.id,
+        preparedDeletion,
       });
       jestExpectSuccessfulMetadataRequestResult(res);
 

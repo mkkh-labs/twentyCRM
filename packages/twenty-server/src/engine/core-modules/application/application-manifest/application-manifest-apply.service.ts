@@ -47,6 +47,13 @@ export class ApplicationManifestApplyService {
     // generated regardless of schema changes.
     const isFirstApply = !isDefined(application.version);
 
+    await this.applicationSyncService.synchronizeFromManifest({
+      workspaceId,
+      manifest,
+      applicationRegistrationId,
+      dryRun: true,
+    });
+
     const { workspaceMigration, hasSchemaMetadataChanged } =
       await this.applicationSyncService.synchronizeFromManifest({
         workspaceId,
