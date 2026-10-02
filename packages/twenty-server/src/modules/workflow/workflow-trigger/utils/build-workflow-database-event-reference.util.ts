@@ -4,8 +4,10 @@ import { type ObjectRecordEvent } from 'twenty-shared/database-events';
 
 import { type DatabaseEventAction } from 'src/engine/api/graphql/graphql-query-runner/enums/database-event-action';
 import { buildDeterministicDigest } from 'src/engine/core-modules/policy/utils/build-deterministic-digest.util';
-import { type WorkflowDatabaseEventReference } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
-import { type WorkflowTriggerProvenanceSignature } from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
+import {
+  type WorkflowDatabaseEventReference,
+  type WorkflowTriggerProvenanceSignature,
+} from 'src/modules/workflow/workflow-trigger/types/workflow-trigger-job-data.type';
 
 const DATABASE_EVENT_REFERENCE_TTL_MILLISECONDS = 15 * 60 * 1_000;
 
